@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Site Monitor Manager
  * Description: SaaS-style dashboard giám sát nhiều website WordPress: monitor, REST API, realtime, dark mode, charts, malware scan, VPS/server và backup.
- * Version: 1.0.0
+ * Version: 1.0.2
  * Author: TNStack
  * Author URI: https://tnstack.com
  * Text Domain: wp-site-monitor-manager
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WPSMM_VERSION', '1.0.0');
+define('WPSMM_VERSION', '1.0.2');
 define('WPSMM_PLUGIN_FILE', __FILE__);
 define('WPSMM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WPSMM_PLUGIN_URL', plugin_dir_url(__FILE__));
