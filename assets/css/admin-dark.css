@@ -1,0 +1,140 @@
+/* Global WordPress admin dark mode enabled from WP Site Monitor settings. */
+body.wpsmm-dark,
+body.wpsmm-dark #wpcontent,
+body.wpsmm-dark #wpwrap,
+body.wpsmm-dark #wpbody,
+body.wpsmm-dark #wpbody-content,
+body.wpsmm-dark .wrap {
+    background: #020617;
+    color: #e5eefb;
+}
+
+body.wpsmm-dark h1,
+body.wpsmm-dark h2,
+body.wpsmm-dark h3,
+body.wpsmm-dark h4,
+body.wpsmm-dark h5,
+body.wpsmm-dark h6,
+body.wpsmm-dark label,
+body.wpsmm-dark .form-table th,
+body.wpsmm-dark .form-wrap label {
+    color: #f1f5f9;
+}
+
+body.wpsmm-dark a {
+    color: #60a5fa;
+}
+
+body.wpsmm-dark a:hover,
+body.wpsmm-dark a:focus {
+    color: #93c5fd;
+}
+
+body.wpsmm-dark input:not([type="checkbox"]):not([type="radio"]),
+body.wpsmm-dark textarea,
+body.wpsmm-dark select,
+body.wpsmm-dark .wp-filter,
+body.wpsmm-dark .search-box input[name="s"] {
+    border-color: #334155;
+    background: #111827;
+    color: #e5eefb;
+}
+
+body.wpsmm-dark input::placeholder,
+body.wpsmm-dark textarea::placeholder {
+    color: #94a3b8;
+}
+
+body.wpsmm-dark .widefat,
+body.wpsmm-dark .widefat thead td,
+body.wpsmm-dark .widefat thead th,
+body.wpsmm-dark .widefat tfoot td,
+body.wpsmm-dark .widefat tfoot th,
+body.wpsmm-dark .widefat tbody td,
+body.wpsmm-dark .widefat tbody th,
+body.wpsmm-dark .postbox,
+body.wpsmm-dark .card,
+body.wpsmm-dark .stuffbox,
+body.wpsmm-dark .notice,
+body.wpsmm-dark .updated,
+body.wpsmm-dark .error,
+body.wpsmm-dark .plugins tr,
+body.wpsmm-dark .theme-browser .theme,
+body.wpsmm-dark .menu-item-settings,
+body.wpsmm-dark .widgets-holder-wrap,
+body.wpsmm-dark .accordion-section,
+body.wpsmm-dark .wp-list-table {
+    border-color: #1e293b;
+    background: #0f172a;
+    color: #e5eefb;
+}
+
+body.wpsmm-dark .alternate,
+body.wpsmm-dark .striped > tbody > :nth-child(odd),
+body.wpsmm-dark ul.striped > :nth-child(odd),
+body.wpsmm-dark .plugins .active th,
+body.wpsmm-dark .plugins .active td {
+    background: #111827;
+}
+
+body.wpsmm-dark .subsubsub a,
+body.wpsmm-dark .description,
+body.wpsmm-dark .form-wrap p,
+body.wpsmm-dark .help,
+body.wpsmm-dark .tablenav,
+body.wpsmm-dark .row-actions,
+body.wpsmm-dark .wp-list-table .column-description,
+body.wpsmm-dark .wp-list-table .column-description p {
+    color: #94a3b8;
+}
+
+body.wpsmm-dark .button,
+body.wpsmm-dark .button-secondary {
+    border-color: #475569;
+    background: #1e293b;
+    color: #e5eefb;
+}
+
+body.wpsmm-dark .button:hover,
+body.wpsmm-dark .button-secondary:hover {
+    border-color: #60a5fa;
+    background: #334155;
+    color: #fff;
+}
+
+body.wpsmm-dark .button-primary {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+
+body.wpsmm-dark .button-primary:hover {
+    border-color: #3b82f6;
+    background: #3b82f6;
+}
+
+body.wpsmm-dark .nav-tab-wrapper,
+body.wpsmm-dark .wrap h2.nav-tab-wrapper,
+body.wpsmm-dark h1.nav-tab-wrapper {
+    border-bottom-color: #334155;
+}
+
+body.wpsmm-dark .nav-tab {
+    border-color: #334155;
+    background: #1e293b;
+    color: #cbd5e1;
+}
+
+body.wpsmm-dark .nav-tab-active,
+body.wpsmm-dark .nav-tab-active:hover {
+    border-bottom-color: #0f172a;
+    background: #0f172a;
+    color: #fff;
+}
+
+body.wpsmm-dark .plugin-update-tr .update-message,
+body.wpsmm-dark .notice-warning,
+body.wpsmm-dark div.updated {
+    background: #172554;
+    color: #dbeafe;
+}

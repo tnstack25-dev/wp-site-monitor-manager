@@ -3,12 +3,9 @@ namespace WPSMM;
 
 use WPSMM\Admin\AdminController;
 use WPSMM\Rest\ApiController;
-use WPSMM\Services\BackupService;
 use WPSMM\Services\DatabaseService;
 use WPSMM\Services\GitHubUpdateService;
-use WPSMM\Services\MalwareScannerService;
 use WPSMM\Services\MonitorService;
-use WPSMM\Services\SecurityService;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -18,7 +15,6 @@ final class Plugin
 {
     public const CHECK_CRON = 'wpsmm_monitor_check_event';
     public const LOG_CLEAN_CRON = 'wpsmm_log_clean_event';
-    public const BACKUP_CRON = 'wpsmm_backup_event';
     private static ?self $instance = null;
     private ?AdminController $admin = null;
     private ?ApiController $api = null;
@@ -33,14 +29,12 @@ final class Plugin
 
     public function boot(): void
     {
+        $this->cleanupRemovedFeatures();
         add_filter('cron_schedules', [$this, 'cronSchedules']);
         add_action('init', [$this, 'loadTextdomain']);
         add_action('admin_init', [$this, 'maybeUpgrade']);
         add_action(self::CHECK_CRON, [MonitorService::class, 'checkAll']);
         add_action(self::LOG_CLEAN_CRON, [MonitorService::class, 'cleanupOldLogs']);
-        add_action(self::BACKUP_CRON, [BackupService::class, 'runScheduled']);
-        add_action('wpsmm_async_backup', [BackupService::class, 'runQueued'], 10, 1);
-        add_action('wpsmm_async_malware_scan', [MalwareScannerService::class, 'runQueued'], 10, 1);
         GitHubUpdateService::register();
         $this->admin = new AdminController();
         $this->admin->register();
@@ -64,7 +58,6 @@ final class Plugin
     public function activate(): void
     {
         DatabaseService::install();
-        SecurityService::prepareBackupDir();
         $this->scheduleCrons();
         update_option('wpsmm_version', WPSMM_VERSION);
     }
@@ -73,7 +66,26 @@ final class Plugin
     {
         wp_clear_scheduled_hook(self::CHECK_CRON);
         wp_clear_scheduled_hook(self::LOG_CLEAN_CRON);
-        wp_clear_scheduled_hook(self::BACKUP_CRON);
+        $this->clearRemovedFeatureCrons();
+    }
+
+    private function clearRemovedFeatureCrons(): void
+    {
+        wp_clear_scheduled_hook('wpsmm_backup_event');
+        wp_clear_scheduled_hook('wpsmm_async_backup');
+        wp_clear_scheduled_hook('wpsmm_async_malware_scan');
+    }
+
+    private function cleanupRemovedFeatures(): void
+    {
+        if (get_option('wpsmm_removed_features_cleaned')) {
+            return;
+        }
+        $this->clearRemovedFeatureCrons();
+        foreach (['wpsmm_backup_schedule', 'wpsmm_backup_hour', 'wpsmm_backup_retention'] as $option) {
+            delete_option($option);
+        }
+        update_option('wpsmm_removed_features_cleaned', 1, false);
     }
 
     public function maybeUpgrade(): void
@@ -81,9 +93,8 @@ final class Plugin
         if (!current_user_can('manage_options')) {
             return;
         }
-        if (get_option('wpsmm_version') !== WPSMM_VERSION) {
+        if (get_option('wpsmm_version') !== WPSMM_VERSION || get_option('wpsmm_schema_version') !== DatabaseService::SCHEMA_VERSION) {
             DatabaseService::install();
-            SecurityService::prepareBackupDir();
             $this->scheduleCrons();
             update_option('wpsmm_version', WPSMM_VERSION);
         }
@@ -97,6 +108,5 @@ final class Plugin
         if (!wp_next_scheduled(self::LOG_CLEAN_CRON)) {
             wp_schedule_event(time() + 3600, 'daily', self::LOG_CLEAN_CRON);
         }
-        BackupService::reschedule();
     }
 }

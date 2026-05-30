@@ -1,12 +1,9 @@
 <?php
 namespace WPSMM\Admin;
 
-use WPSMM\Repositories\ServerRepository;
 use WPSMM\Repositories\SiteRepository;
-use WPSMM\Services\BackupService;
 use WPSMM\Services\DatabaseService;
 use WPSMM\Services\GitHubUpdateService;
-use WPSMM\Services\MalwareScannerService;
 use WPSMM\Services\SecurityService;
 
 if (!defined('ABSPATH')) {
@@ -19,32 +16,29 @@ final class AdminController
     {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_enqueue_scripts', [$this, 'assets']);
+        add_filter('admin_body_class', [$this, 'bodyClass']);
         add_action('admin_post_wpsmm_save_site', [$this, 'saveSite']);
         add_action('admin_post_wpsmm_delete_site', [$this, 'deleteSite']);
+        add_action('admin_post_wpsmm_quick_login', [$this, 'quickLogin']);
+        add_action('admin_post_wpsmm_reveal_credentials', [$this, 'revealCredentials']);
+        add_action('admin_post_wpsmm_update_site_credentials', [$this, 'updateSiteCredentials']);
         add_action('admin_post_wpsmm_save_settings', [$this, 'saveSettings']);
-        add_action('admin_post_wpsmm_save_server', [$this, 'saveServer']);
-        add_action('admin_post_wpsmm_delete_server', [$this, 'deleteServer']);
-        add_action('admin_post_wpsmm_backup_now', [$this, 'backupNow']);
-        add_action('admin_post_wpsmm_malware_scan', [$this, 'malwareScan']);
-        add_action('admin_post_wpsmm_download_backup', [$this, 'downloadBackup']);
-        add_action('admin_post_wpsmm_delete_backup', [$this, 'deleteBackup']);
+        add_action('admin_head', [$this, 'hideTgmpaNotice']);
         add_action('admin_notices', [$this, 'notices']);
     }
 
     public function menu(): void
     {
         add_menu_page('WP Site Monitor', 'WP Site Monitor', 'manage_options', 'wpsmm', [$this, 'dashboard'], 'dashicons-chart-area', 58);
-        add_submenu_page('wpsmm', 'Dashboard', 'Dashboard', 'manage_options', 'wpsmm', [$this, 'dashboard']);
-        add_submenu_page('wpsmm', 'Websites', 'Websites', 'manage_options', 'wpsmm-sites', [$this, 'sites']);
-        add_submenu_page('wpsmm', 'Logs', 'Logs', 'manage_options', 'wpsmm-logs', [$this, 'logs']);
-        add_submenu_page('wpsmm', 'Backup', 'Backup', 'manage_options', 'wpsmm-backup', [$this, 'backup']);
-        add_submenu_page('wpsmm', 'Malware Scan', 'Malware Scan', 'manage_options', 'wpsmm-malware', [$this, 'malware']);
-        add_submenu_page('wpsmm', 'Servers/VPS', 'Servers/VPS', 'manage_options', 'wpsmm-servers', [$this, 'servers']);
-        add_submenu_page('wpsmm', 'Settings', 'Settings', 'manage_options', 'wpsmm-settings', [$this, 'settings']);
+        add_submenu_page('wpsmm', 'Tổng quan', 'Tổng quan', 'manage_options', 'wpsmm', [$this, 'dashboard']);
+        add_submenu_page('wpsmm', 'Website', 'Website', 'manage_options', 'wpsmm-sites', [$this, 'sites']);
+        add_submenu_page('wpsmm', 'Nhật ký', 'Nhật ký', 'manage_options', 'wpsmm-logs', [$this, 'logs']);
+        add_submenu_page('wpsmm', 'Cài đặt', 'Cài đặt', 'manage_options', 'wpsmm-settings', [$this, 'settings']);
     }
 
     public function assets(string $hook): void
     {
+        wp_enqueue_style('wpsmm-admin-dark', WPSMM_PLUGIN_URL . 'assets/css/admin-dark.css', [], WPSMM_VERSION);
         if (strpos($hook, 'wpsmm') === false) {
             return;
         }
@@ -58,7 +52,23 @@ final class AdminController
             'websocketUrl' => (string) get_option('wpsmm_websocket_url', ''),
             'darkMode' => (bool) get_option('wpsmm_dark_mode', 0),
             'pollInterval' => 10000,
+            'adminSites' => admin_url('admin.php?page=wpsmm-sites'),
+            'adminNewSite' => admin_url('admin.php?page=wpsmm-sites&action=new'),
+            'adminLogs' => admin_url('admin.php?page=wpsmm-logs'),
         ]);
+    }
+
+    public function bodyClass(string $classes): string
+    {
+        return get_option('wpsmm_dark_mode', 0) ? $classes . ' wpsmm-dark' : $classes;
+    }
+
+    public function hideTgmpaNotice(): void
+    {
+        if (!get_option('wpsmm_hide_tgmpa_notice', 0)) {
+            return;
+        }
+        echo '<style id="wpsmm-hide-tgmpa-notice">#setting-error-tgmpa,.settings-error-tgmpa{display:none!important}</style>';
     }
 
     public function dashboard(): void
@@ -68,44 +78,80 @@ final class AdminController
 
     public function sites(): void
     {
-        $this->render('sites', [
-            'sites' => SiteRepository::all(),
-            'servers' => ServerRepository::all(),
-            'edit' => isset($_GET['id']) ? SiteRepository::find((int) $_GET['id']) : null,
-        ]);
+        $edit = isset($_GET['id']) ? SiteRepository::find((int) $_GET['id']) : null;
+        $action = sanitize_key(wp_unslash($_GET['action'] ?? ''));
+        if ($edit && $action === 'view') {
+            $credentials = $this->consumeCredentialsReveal($edit);
+            $refreshInventory = !empty($_GET['refresh_inventory']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'] ?? '')), 'wpsmm_refresh_inventory_' . $edit->id);
+            $inventory = $this->fetchSiteInventory($edit, $refreshInventory);
+            if ($credentials) {
+                nocache_headers();
+            }
+            $this->render('site-detail', ['site' => $edit, 'logs' => SiteRepository::recentLogs((int) $edit->id), 'credentials' => $credentials, 'inventory' => $inventory]);
+            return;
+        }
+        if ($edit || $action === 'new') {
+            $this->render('site-form', ['edit' => $edit]);
+            return;
+        }
+        $this->render('sites', ['sites' => SiteRepository::all()]);
     }
 
     public function logs(): void
     {
         global $wpdb;
         $page = max(1, (int) ($_GET['paged'] ?? 1));
-        $per = 30;
-        $total = (int) $wpdb->get_var('SELECT COUNT(*) FROM ' . DatabaseService::table('logs'));
-        $logs = $wpdb->get_results($wpdb->prepare('SELECT l.*,s.name site_name,s.url site_url FROM ' . DatabaseService::table('logs') . ' l LEFT JOIN ' . DatabaseService::table('sites') . ' s ON s.id=l.site_id ORDER BY l.checked_at DESC LIMIT %d OFFSET %d', $per, ($page - 1) * $per)) ?: [];
-        $this->render('logs', compact('logs', 'page', 'per', 'total'));
-    }
-
-    public function backup(): void
-    {
-        global $wpdb;
-        $this->render('backup', [
-            'sites' => SiteRepository::all(),
-            'backups' => $wpdb->get_results('SELECT b.*, s.name site_name FROM ' . DatabaseService::table('backups') . ' b LEFT JOIN ' . DatabaseService::table('sites') . ' s ON s.id=b.site_id ORDER BY b.created_at DESC LIMIT 80') ?: [],
-        ]);
-    }
-
-    public function malware(): void
-    {
-        global $wpdb;
-        $this->render('malware', [
-            'sites' => SiteRepository::all(),
-            'scans' => $wpdb->get_results('SELECT m.*, s.name site_name, s.url site_url FROM ' . DatabaseService::table('malware_scans') . ' m LEFT JOIN ' . DatabaseService::table('sites') . ' s ON s.id=m.site_id ORDER BY m.created_at DESC LIMIT 40') ?: [],
-        ]);
-    }
-
-    public function servers(): void
-    {
-        $this->render('servers', ['servers' => ServerRepository::all()]);
+        $per = min(100, max(10, (int) ($_GET['per_page'] ?? 20)));
+        $filters = [
+            'site_id' => absint($_GET['site_id'] ?? 0),
+            'status' => sanitize_key(wp_unslash($_GET['status'] ?? '')),
+            'date_from' => sanitize_text_field(wp_unslash($_GET['date_from'] ?? '')),
+            'date_to' => sanitize_text_field(wp_unslash($_GET['date_to'] ?? '')),
+            'search' => sanitize_text_field(wp_unslash($_GET['search'] ?? '')),
+        ];
+        $where = [];
+        $values = [];
+        if ($filters['site_id']) {
+            $where[] = 'l.site_id=%d';
+            $values[] = $filters['site_id'];
+        }
+        if ($filters['status']) {
+            $where[] = 'l.status=%s';
+            $values[] = $filters['status'];
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filters['date_from'])) {
+            $where[] = 'l.checked_at >= %s';
+            $values[] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filters['date_to'])) {
+            $where[] = 'l.checked_at <= %s';
+            $values[] = $filters['date_to'] . ' 23:59:59';
+        }
+        if ($filters['search'] !== '') {
+            $like = '%' . $wpdb->esc_like($filters['search']) . '%';
+            $where[] = '(l.message LIKE %s OR s.name LIKE %s OR s.url LIKE %s)';
+            array_push($values, $like, $like, $like);
+        }
+        $clause = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+        $join = ' FROM ' . DatabaseService::table('logs') . ' l LEFT JOIN ' . DatabaseService::table('sites') . ' s ON s.id=l.site_id';
+        $countSql = 'SELECT COUNT(*)' . $join . $clause;
+        $total = (int) $wpdb->get_var($values ? $wpdb->prepare($countSql, $values) : $countSql);
+        $pages = max(1, (int) ceil($total / $per));
+        $page = min($page, $pages);
+        $query = 'SELECT l.*,s.name site_name,s.url site_url' . $join . $clause . ' ORDER BY l.checked_at DESC LIMIT %d OFFSET %d';
+        $logs = $wpdb->get_results($wpdb->prepare($query, array_merge($values, [$per, ($page - 1) * $per]))) ?: [];
+        $stats = ['online' => 0, 'warning' => 0, 'error' => 0];
+        $statsSql = 'SELECT l.status, COUNT(*) total' . $join . $clause . ' GROUP BY l.status';
+        foreach (($wpdb->get_results($values ? $wpdb->prepare($statsSql, $values) : $statsSql) ?: []) as $row) {
+            if (in_array($row->status, ['online', 'redirect'], true)) {
+                $stats['online'] += (int) $row->total;
+            } elseif (in_array($row->status, ['offline', 'server_error', 'ssl_error'], true)) {
+                $stats['error'] += (int) $row->total;
+            } else {
+                $stats['warning'] += (int) $row->total;
+            }
+        }
+        $this->render('logs', ['logs' => $logs, 'sites' => SiteRepository::all(), 'page' => $page, 'per' => $per, 'total' => $total, 'filters' => $filters, 'stats' => $stats]);
     }
 
     public function settings(): void
@@ -121,35 +167,49 @@ final class AdminController
         check_admin_referer('wpsmm_save_site');
 
         $id = (int) ($_POST['id'] ?? 0);
-        $existing = $id ? SiteRepository::find($id) : null;
         $url = trim(wp_unslash($_POST['url'] ?? ''));
         if ($url && !preg_match('~^https?://~i', $url)) {
             $url = 'https://' . $url;
         }
-        $url = SecurityService::publicHttpUrl($url);
-
         $data = [
             'name' => sanitize_text_field(wp_unslash($_POST['name'] ?? '')),
-            'url' => $url,
+            'url' => SecurityService::publicHttpUrl($url),
             'group_name' => sanitize_text_field(wp_unslash($_POST['group_name'] ?? '')),
             'expected_status' => absint($_POST['expected_status'] ?? 200) ?: 200,
             'expected_title' => sanitize_text_field(wp_unslash($_POST['expected_title'] ?? '')),
-            'server_id' => absint($_POST['server_id'] ?? 0),
-            'remote_path' => sanitize_text_field(wp_unslash($_POST['remote_path'] ?? '')),
-            'db_name' => sanitize_text_field(wp_unslash($_POST['db_name'] ?? '')),
-            'db_user' => sanitize_text_field(wp_unslash($_POST['db_user'] ?? '')),
-            'db_pass' => $this->postedSecret('db_pass', $existing->db_pass ?? ''),
-            'backup_secret' => $this->postedSecret('backup_secret', $existing->backup_secret ?? ''),
         ];
-
-        if (!$data['name'] || !$data['url']) {
-            $this->notice('error', 'Ten website hoac URL khong hop le/public.');
+        $loginUrl = trim(wp_unslash($_POST['login_url'] ?? ''));
+        if ($loginUrl !== '' && !preg_match('~^https?://~i', $loginUrl)) {
+            $loginUrl = 'https://' . $loginUrl;
+        }
+        $data['login_url'] = $loginUrl === '' ? '' : SecurityService::publicLoginUrl($loginUrl);
+        $postedAgentSecret = strtolower(trim((string) wp_unslash($_POST['agent_secret'] ?? '')));
+        if ($postedAgentSecret !== '' && !preg_match('/^[a-f0-9]{64}$/', $postedAgentSecret)) {
+            $this->notice('error', 'Khóa kết nối Agent phải gồm đúng 64 ký tự hex.');
             $this->redirect('wpsmm-sites');
         }
-
-        SiteRepository::save($data, $id);
-        $this->notice('success', 'Da luu website.');
-        $this->redirect('wpsmm-sites');
+        if ((!empty($_POST['login_username']) || !empty($_POST['login_password']) || $postedAgentSecret !== '') && !SecurityService::supportsEncryption()) {
+            $this->notice('error', 'Máy chủ chưa hỗ trợ OpenSSL nên không thể lưu thông tin đăng nhập an toàn.');
+            $this->redirect('wpsmm-sites');
+        }
+        foreach (['login_username', 'login_password', 'agent_secret'] as $secret) {
+            $value = trim(wp_unslash($_POST[$secret] ?? ''));
+            if ($value !== '') {
+                $data[$secret] = SecurityService::encryptSecret($value);
+            }
+        }
+        if (!$data['name'] || !$data['url']) {
+            $this->notice('error', 'Tên website hoặc URL không hợp lệ.');
+            $this->redirect('wpsmm-sites');
+        }
+        if ($loginUrl !== '' && !$data['login_url']) {
+            $this->notice('error', 'URL đăng nhập không hợp lệ.');
+            $this->redirect('wpsmm-sites');
+        }
+        $savedId = SiteRepository::save($data, $id);
+        delete_transient('wpsmm_inventory_' . $savedId);
+        $this->notice('success', 'Đã lưu website.');
+        $this->redirect('wpsmm-sites&action=view&id=' . $savedId);
     }
 
     public function deleteSite(): void
@@ -160,47 +220,132 @@ final class AdminController
         $id = (int) ($_GET['id'] ?? 0);
         check_admin_referer('wpsmm_delete_site_' . $id);
         SiteRepository::delete($id);
-        $this->notice('success', 'Da xoa website.');
+        $this->notice('success', 'Đã xóa website.');
         $this->redirect('wpsmm-sites');
     }
 
-    public function saveServer(): void
+    public function quickLogin(): void
     {
         if (!current_user_can('manage_options')) {
             wp_die();
         }
-        check_admin_referer('wpsmm_save_server');
-
-        $host = sanitize_text_field(wp_unslash($_POST['host'] ?? ''));
-        if (!SecurityService::isPublicHost($host)) {
-            $this->notice('error', 'Host server phai la public host/IP hop le.');
-            $this->redirect('wpsmm-servers');
+        $id = absint($_POST['id'] ?? 0);
+        check_admin_referer('wpsmm_quick_login_' . $id);
+        if (!$this->verifyCurrentUserPassword((string) wp_unslash($_POST['confirmation_password'] ?? ''), 'quick_login')) {
+            wp_die('Mật khẩu xác nhận không chính xác hoặc bạn đã thử sai quá nhiều lần.');
         }
-
-        ServerRepository::save([
-            'name' => sanitize_text_field(wp_unslash($_POST['name'] ?? '')),
-            'host' => $host,
-            'port' => absint($_POST['port'] ?? 22) ?: 22,
-            'username' => sanitize_text_field(wp_unslash($_POST['username'] ?? '')),
-            'auth_type' => sanitize_key(wp_unslash($_POST['auth_type'] ?? 'key_path')),
-            'key_path' => $this->postedSecret('key_path', ''),
-            'password' => $this->postedSecret('password', ''),
-            'backup_path' => sanitize_text_field(wp_unslash($_POST['backup_path'] ?? '/tmp/wpsmm-backups')),
-        ]);
-        $this->notice('success', 'Da luu server/VPS.');
-        $this->redirect('wpsmm-servers');
+        $site = SiteRepository::find($id);
+        $loginUrl = $site ? SecurityService::publicLoginUrl((string) $site->login_url) : '';
+        $username = $site ? SecurityService::decryptSecret((string) $site->login_username) : '';
+        if (!$site || !$loginUrl || $username === '' || empty($site->agent_secret)) {
+            wp_die('Thông tin đăng nhập nhanh chưa được cấu hình đầy đủ.');
+        }
+        $endpoint = untrailingslashit((string) $site->url) . '/wp-json/wpma/v1/sso-ticket';
+        $response = $this->signedAgentPost($site, $endpoint, '/wpma/v1/sso-ticket', ['username' => $username]);
+        if (is_wp_error($response)) {
+            wp_die('Không thể kết nối an toàn với WP Site Monitor Agent trên website con.');
+        }
+        $payload = json_decode((string) wp_remote_retrieve_body($response), true);
+        $ticketUrl = SecurityService::publicLoginUrl((string) ($payload['login_url'] ?? ''));
+        $ticket = strtolower((string) ($payload['ticket'] ?? ''));
+        $siteHost = wp_parse_url((string) $site->url, PHP_URL_HOST);
+        $ticketHost = wp_parse_url($ticketUrl, PHP_URL_HOST);
+        if (wp_remote_retrieve_response_code($response) !== 200 || !$ticketUrl || !preg_match('/^[a-f0-9]{64}$/', $ticket) || !$siteHost || strcasecmp((string) $siteHost, (string) $ticketHost) !== 0) {
+            wp_die(esc_html((string) ($payload['message'] ?? 'Website con từ chối yêu cầu đăng nhập nhanh.')));
+        }
+        nocache_headers();
+        ?>
+        <!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Đang đăng nhập...</title></head>
+        <body><form id="wpsmm-sso" method="post" action="<?php echo esc_url($ticketUrl); ?>"><input type="hidden" name="ticket" value="<?php echo esc_attr($ticket); ?>"></form><script>document.getElementById("wpsmm-sso").submit();</script></body></html>
+        <?php
+        exit;
     }
 
-    public function deleteServer(): void
+    public function revealCredentials(): void
     {
         if (!current_user_can('manage_options')) {
             wp_die();
         }
-        $id = (int) ($_GET['id'] ?? 0);
-        check_admin_referer('wpsmm_delete_server_' . $id);
-        ServerRepository::delete($id);
-        $this->notice('success', 'Da xoa server.');
-        $this->redirect('wpsmm-servers');
+        $id = absint($_POST['id'] ?? 0);
+        check_admin_referer('wpsmm_reveal_credentials_' . $id);
+        $rateKey = 'wpsmm_reveal_rate_' . get_current_user_id();
+        $attempts = (int) get_transient($rateKey);
+        if ($attempts >= 5) {
+            $this->notice('error', 'Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau 5 phút.');
+            $this->redirect('wpsmm-sites&action=view&id=' . $id);
+        }
+
+        $user = wp_get_current_user();
+        $password = (string) wp_unslash($_POST['confirmation_password'] ?? '');
+        if ($password === '' || !wp_check_password($password, (string) $user->user_pass, (int) $user->ID)) {
+            set_transient($rateKey, $attempts + 1, 5 * MINUTE_IN_SECONDS);
+            $this->notice('error', 'Mật khẩu xác nhận không chính xác.');
+            $this->redirect('wpsmm-sites&action=view&id=' . $id);
+        }
+
+        $site = SiteRepository::find($id);
+        if (!$site || empty($site->login_username) || empty($site->login_password)) {
+            $this->notice('error', 'Website chưa có thông tin đăng nhập để hiển thị.');
+            $this->redirect('wpsmm-sites&action=view&id=' . $id);
+        }
+
+        delete_transient($rateKey);
+        $token = bin2hex(random_bytes(32));
+        set_transient('wpsmm_reveal_' . hash('sha256', $token), ['user_id' => (int) $user->ID, 'site_id' => $id], MINUTE_IN_SECONDS);
+        $this->redirect('wpsmm-sites&action=view&id=' . $id . '&reveal=' . rawurlencode($token));
+    }
+
+    public function updateSiteCredentials(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die();
+        }
+        $id = absint($_POST['id'] ?? 0);
+        check_admin_referer('wpsmm_update_site_credentials_' . $id);
+        $site = SiteRepository::find($id);
+        if (!$site) {
+            $this->notice('error', 'Website không tồn tại.');
+            $this->redirect('wpsmm-sites');
+        }
+
+        if (!$this->verifyCurrentUserPassword((string) wp_unslash($_POST['confirmation_password'] ?? ''), 'update_credentials')) {
+            $this->notice('error', 'Mật khẩu xác nhận không chính xác.');
+            $this->redirect('wpsmm-sites&action=view&id=' . $id);
+        }
+        if (!SecurityService::supportsEncryption()) {
+            $this->notice('error', 'Máy chủ chưa hỗ trợ OpenSSL nên không thể lưu thông tin đăng nhập an toàn.');
+            $this->redirect('wpsmm-sites&action=view&id=' . $id);
+        }
+
+        $loginUrl = trim((string) wp_unslash($_POST['login_url'] ?? ''));
+        if ($loginUrl !== '' && !preg_match('~^https?://~i', $loginUrl)) {
+            $loginUrl = 'https://' . $loginUrl;
+        }
+        $loginUrl = $loginUrl === '' ? '' : SecurityService::publicLoginUrl($loginUrl);
+        $username = trim((string) wp_unslash($_POST['login_username'] ?? ''));
+        $password = (string) wp_unslash($_POST['login_password'] ?? '');
+        if ($loginUrl === '' || $username === '' || $password === '') {
+            $this->notice('error', 'Vui lòng nhập đầy đủ URL đăng nhập, tài khoản và mật khẩu mới.');
+            $this->redirect('wpsmm-sites&action=view&id=' . $id);
+        }
+
+        $data = [
+            'login_url' => $loginUrl,
+            'login_username' => SecurityService::encryptSecret($username),
+            'login_password' => SecurityService::encryptSecret($password),
+        ];
+        $agentSecret = strtolower(trim((string) wp_unslash($_POST['agent_secret'] ?? '')));
+        if ($agentSecret !== '') {
+            if (!preg_match('/^[a-f0-9]{64}$/', $agentSecret)) {
+                $this->notice('error', 'Khóa kết nối Agent phải gồm đúng 64 ký tự hex.');
+                $this->redirect('wpsmm-sites&action=view&id=' . $id);
+            }
+            $data['agent_secret'] = SecurityService::encryptSecret($agentSecret);
+        }
+        SiteRepository::save($data, $id);
+        delete_transient('wpsmm_inventory_' . $id);
+        $this->notice('success', 'Đã cập nhật thông tin đăng nhập website con.');
+        $this->redirect('wpsmm-sites&action=view&id=' . $id);
     }
 
     public function saveSettings(): void
@@ -209,11 +354,10 @@ final class AdminController
             wp_die();
         }
         check_admin_referer('wpsmm_save_settings');
-
-        foreach (['wpsmm_telegram_chat_id', 'wpsmm_alert_email', 'wpsmm_suspicious_keywords'] as $key) {
+        foreach (['wpsmm_telegram_chat_id', 'wpsmm_alert_email'] as $key) {
             update_option($key, sanitize_text_field(wp_unslash($_POST[$key] ?? '')));
         }
-
+        update_option('wpsmm_suspicious_keywords', sanitize_textarea_field(wp_unslash($_POST['wpsmm_suspicious_keywords'] ?? '')));
         foreach (['wpsmm_telegram_bot_token', 'wpsmm_zalo_webhook_url'] as $key) {
             $value = sanitize_text_field(wp_unslash($_POST[$key] ?? ''));
             if ($key === 'wpsmm_zalo_webhook_url' && $value !== '') {
@@ -223,89 +367,18 @@ final class AdminController
                 update_option($key, SecurityService::encryptSecret($value));
             }
         }
-
         $ws = SecurityService::publicUrl((string) wp_unslash($_POST['wpsmm_websocket_url'] ?? ''), ['wss']);
         update_option('wpsmm_websocket_url', $ws);
-        foreach (['wpsmm_dark_mode', 'wpsmm_enable_email_alert', 'wpsmm_enable_zalo_alert'] as $key) {
+        foreach (['wpsmm_dark_mode', 'wpsmm_enable_email_alert', 'wpsmm_enable_zalo_alert', 'wpsmm_enable_telegram_alert', 'wpsmm_hide_tgmpa_notice'] as $key) {
             update_option($key, !empty($_POST[$key]) ? 1 : 0);
         }
         update_option('wpsmm_log_retention_days', max(1, absint($_POST['wpsmm_log_retention_days'] ?? 7)));
         update_option('wpsmm_error_threshold', max(1, absint($_POST['wpsmm_error_threshold'] ?? 2)));
         update_option('wpsmm_timeout', max(5, absint($_POST['wpsmm_timeout'] ?? 15)));
         update_option('wpsmm_ssl_warning_days', max(1, absint($_POST['wpsmm_ssl_warning_days'] ?? 14)));
-        update_option('wpsmm_backup_schedule', sanitize_key(wp_unslash($_POST['wpsmm_backup_schedule'] ?? 'daily')));
-        update_option('wpsmm_backup_hour', sanitize_text_field(wp_unslash($_POST['wpsmm_backup_hour'] ?? '02:00')));
-        update_option('wpsmm_backup_retention', max(1, absint($_POST['wpsmm_backup_retention'] ?? 3)));
-        BackupService::reschedule();
         GitHubUpdateService::clearCache();
-        $this->notice('success', 'Da luu cai dat.');
+        $this->notice('success', 'Đã lưu cài đặt.');
         $this->redirect('wpsmm-settings');
-    }
-
-    public function backupNow(): void
-    {
-        if (!current_user_can('manage_options')) {
-            wp_die();
-        }
-        check_admin_referer('wpsmm_backup_now');
-        $ids = array_map('intval', (array) ($_POST['site_ids'] ?? []));
-        if (!$ids) {
-            $this->notice('error', 'Vui lòng chọn website cần backup.');
-        } else {
-            BackupService::queue($ids);
-            $this->notice('success', 'Đã thêm backup vào hàng đợi.');
-        }
-        $this->redirect('wpsmm-backup');
-    }
-
-    public function malwareScan(): void
-    {
-        if (!current_user_can('manage_options')) {
-            wp_die();
-        }
-        check_admin_referer('wpsmm_malware_scan');
-        MalwareScannerService::queue(absint($_POST['site_id'] ?? 0));
-        $this->notice('success', 'Đã thêm malware scan vào hàng đợi.');
-        $this->redirect('wpsmm-malware');
-    }
-
-    public function downloadBackup(): void
-    {
-        if (!current_user_can('manage_options')) {
-            wp_die();
-        }
-        $id = (int) ($_GET['id'] ?? 0);
-        check_admin_referer('wpsmm_download_backup_' . $id);
-        global $wpdb;
-        $backup = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . DatabaseService::table('backups') . ' WHERE id=%d', $id));
-        if (!$backup || !is_file($backup->file_path) || !SecurityService::backupPathAllowed((string) $backup->file_path)) {
-            wp_die('File backup không tồn tại hoặc không hợp lệ.');
-        }
-        header('Content-Type: application/zip');
-        header('X-Content-Type-Options: nosniff');
-        header('Content-Disposition: attachment; filename="' . basename($backup->file_name) . '"');
-        header('Content-Length: ' . filesize($backup->file_path));
-        readfile($backup->file_path);
-        exit;
-    }
-
-    public function deleteBackup(): void
-    {
-        if (!current_user_can('manage_options')) {
-            wp_die();
-        }
-        $id = (int) ($_GET['id'] ?? 0);
-        check_admin_referer('wpsmm_delete_backup_' . $id);
-        global $wpdb;
-        $backup = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . DatabaseService::table('backups') . ' WHERE id=%d', $id));
-        if ($backup && is_file($backup->file_path) && SecurityService::backupPathAllowed((string) $backup->file_path)) {
-            @unlink($backup->file_path);
-        }
-        if ($backup) {
-            $wpdb->update(DatabaseService::table('backups'), ['file_path' => '', 'message' => 'Đã xóa file local'], ['id' => $id]);
-        }
-        $this->notice('success', 'Đã xóa file backup local.');
-        $this->redirect('wpsmm-backup');
     }
 
     public function notices(): void
@@ -324,15 +397,102 @@ final class AdminController
         include WPSMM_PLUGIN_DIR . 'templates/admin/' . $template . '.php';
     }
 
-    private function postedSecret(string $key, string $existing): string
-    {
-        $value = sanitize_text_field(wp_unslash($_POST[$key] ?? ''));
-        return $value === '' ? $existing : SecurityService::encryptSecret($value);
-    }
-
     private function notice(string $type, string $message): void
     {
         set_transient('wpsmm_notice_' . get_current_user_id(), compact('type', 'message'), 60);
+    }
+
+    private function consumeCredentialsReveal(object $site): ?array
+    {
+        $token = sanitize_text_field(wp_unslash($_GET['reveal'] ?? ''));
+        if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+            return null;
+        }
+        $key = 'wpsmm_reveal_' . hash('sha256', $token);
+        $grant = get_transient($key);
+        delete_transient($key);
+        if (!is_array($grant) || (int) ($grant['user_id'] ?? 0) !== get_current_user_id() || (int) ($grant['site_id'] ?? 0) !== (int) $site->id) {
+            return null;
+        }
+        return [
+            'username' => SecurityService::decryptSecret((string) $site->login_username),
+            'password' => SecurityService::decryptSecret((string) $site->login_password),
+        ];
+    }
+
+    private function verifyCurrentUserPassword(string $password, string $context): bool
+    {
+        $user = wp_get_current_user();
+        $rateKey = 'wpsmm_password_rate_' . get_current_user_id() . '_' . sanitize_key($context);
+        $attempts = (int) get_transient($rateKey);
+        if ($attempts >= 5 || $password === '' || !wp_check_password($password, (string) $user->user_pass, (int) $user->ID)) {
+            set_transient($rateKey, $attempts + 1, 5 * MINUTE_IN_SECONDS);
+            return false;
+        }
+        delete_transient($rateKey);
+        return true;
+    }
+
+    private function fetchSiteInventory(object $site, bool $refresh = false): array
+    {
+        $cacheKey = 'wpsmm_inventory_' . (int) $site->id;
+        if (!$refresh && ($cached = get_transient($cacheKey)) && is_array($cached)) {
+            return $cached;
+        }
+        if (empty($site->agent_secret)) {
+            return ['success' => false, 'message' => 'Cần cấu hình khóa kết nối Agent để tải thông tin kỹ thuật.'];
+        }
+
+        $endpoint = SecurityService::publicLoginUrl(untrailingslashit((string) $site->url) . '/wp-json/wpma/v1/inventory');
+        if (!$endpoint) {
+            return ['success' => false, 'message' => 'URL website con không hợp lệ hoặc chưa sử dụng HTTPS.'];
+        }
+        $response = $this->signedAgentPost($site, $endpoint, '/wpma/v1/inventory', ['refresh' => $refresh]);
+        if (is_wp_error($response)) {
+            return ['success' => false, 'message' => 'Không thể kết nối với WP Site Monitor Agent trên website con.'];
+        }
+        $payload = json_decode((string) wp_remote_retrieve_body($response), true);
+        if (wp_remote_retrieve_response_code($response) !== 200 || empty($payload['success']) || !is_array($payload['inventory'] ?? null)) {
+            return ['success' => false, 'message' => (string) ($payload['message'] ?? 'Agent chưa hỗ trợ tải thông tin plugin và theme.')];
+        }
+        $result = ['success' => true, 'data' => $payload['inventory']];
+        set_transient($cacheKey, $result, 5 * MINUTE_IN_SECONDS);
+        return $result;
+    }
+
+    private function signedAgentPost(object $site, string $endpoint, string $route, array $payload)
+    {
+        $secret = SecurityService::decryptSecret((string) ($site->agent_secret ?? ''));
+        if (!preg_match('/^[a-f0-9]{64}$/', $secret)) {
+            return new \WP_Error('wpsmm_agent_secret_missing', 'Khóa kết nối Agent chưa được cấu hình.');
+        }
+        $endpoint = SecurityService::publicLoginUrl($endpoint);
+        $siteHost = wp_parse_url((string) $site->url, PHP_URL_HOST);
+        $endpointHost = wp_parse_url($endpoint, PHP_URL_HOST);
+        if (!$endpoint || !$siteHost || !$endpointHost || strcasecmp((string) $siteHost, (string) $endpointHost) !== 0) {
+            return new \WP_Error('wpsmm_agent_endpoint_invalid', 'Endpoint Agent không hợp lệ.');
+        }
+        $body = wp_json_encode($payload);
+        $timestamp = (string) time();
+        $nonce = bin2hex(random_bytes(16));
+        $canonical = $timestamp . "\n" . $nonce . "\n" . $route . "\n" . hash('sha256', $body);
+        $args = [
+            'timeout' => 20,
+            'redirection' => 0,
+            'sslverify' => true,
+            'reject_unsafe_urls' => true,
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'X-WPMA-Timestamp' => $timestamp,
+                'X-WPMA-Nonce' => $nonce,
+                'X-WPMA-Signature' => hash_hmac('sha256', $canonical, $secret),
+            ],
+            'body' => $body,
+        ];
+        if (defined('WPSMM_ALLOW_PRIVATE_HOSTS') && WPSMM_ALLOW_PRIVATE_HOSTS) {
+            return wp_remote_post($endpoint, $args);
+        }
+        return wp_safe_remote_post($endpoint, $args);
     }
 
     private function redirect(string $page): void

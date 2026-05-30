@@ -9,6 +9,11 @@ final class SecurityService
 {
     private const SECRET_PREFIX = 'wpsmm:v1:';
 
+    public static function supportsEncryption(): bool
+    {
+        return function_exists('openssl_encrypt') && function_exists('openssl_decrypt');
+    }
+
     public static function encryptSecret(string $value): string
     {
         $value = trim($value);
@@ -57,6 +62,12 @@ final class SecurityService
         return self::publicUrl($url, $httpsOnly ? ['https'] : ['http', 'https']);
     }
 
+    public static function publicLoginUrl(string $url): string
+    {
+        $allowHttp = defined('WPSMM_ALLOW_INSECURE_LOGIN') && WPSMM_ALLOW_INSECURE_LOGIN;
+        return self::publicHttpUrl($url, !$allowHttp);
+    }
+
     public static function publicUrl(string $url, array $allowedSchemes): string
     {
         $url = esc_url_raw(trim($url));
@@ -96,47 +107,10 @@ final class SecurityService
         return true;
     }
 
-    public static function backupDir(): string
-    {
-        $upload = wp_upload_dir();
-        return trailingslashit($upload['basedir']) . 'wpsmm-backups/';
-    }
-
-    public static function prepareBackupDir(): string
-    {
-        $dir = self::backupDir();
-        wp_mkdir_p($dir);
-        if (is_dir($dir)) {
-            $htaccess = $dir . '.htaccess';
-            if (!file_exists($htaccess)) {
-                file_put_contents($htaccess, "Require all denied\nDeny from all\n");
-            }
-            $webConfig = $dir . 'web.config';
-            if (!file_exists($webConfig)) {
-                file_put_contents($webConfig, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration><system.webServer><authorization><deny users=\"*\" /></authorization></system.webServer></configuration>\n");
-            }
-            $index = $dir . 'index.php';
-            if (!file_exists($index)) {
-                file_put_contents($index, "<?php\n// Silence is golden.\n");
-            }
-        }
-        return $dir;
-    }
-
-    public static function backupPathAllowed(string $path): bool
-    {
-        $base = realpath(self::backupDir());
-        $real = realpath($path);
-        if (!$base || !$real) {
-            return false;
-        }
-        return strpos($real, trailingslashit($base)) === 0;
-    }
-
     public static function redactObject($row): array
     {
         $data = (array) $row;
-        foreach (['db_pass', 'backup_secret', 'password', 'key_path', 'file_path', 'drive_file_id'] as $key) {
+        foreach (['db_pass', 'backup_secret', 'password', 'login_username', 'login_password', 'agent_secret', 'key_path', 'file_path', 'drive_file_id'] as $key) {
             if (array_key_exists($key, $data)) {
                 unset($data[$key]);
             }

@@ -7,6 +7,8 @@ if (!defined('ABSPATH')) {
 
 final class DatabaseService
 {
+    public const SCHEMA_VERSION = '1.0.4';
+
     public static function table(string $name): string
     {
         global $wpdb;
@@ -20,15 +22,16 @@ final class DatabaseService
         $charset = $wpdb->get_charset_collate();
         $sites = self::table('sites');
         $logs = self::table('logs');
-        $backups = self::table('backups');
-        $servers = self::table('servers');
-        $scans = self::table('malware_scans');
 
         dbDelta("CREATE TABLE $sites (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(190) NOT NULL,
             url TEXT NOT NULL,
             group_name VARCHAR(100) DEFAULT '',
+            login_url TEXT NULL,
+            login_username TEXT NULL,
+            login_password TEXT NULL,
+            agent_secret TEXT NULL,
             expected_status INT DEFAULT 200,
             expected_title VARCHAR(255) DEFAULT '',
             status VARCHAR(30) DEFAULT 'unknown',
@@ -42,17 +45,10 @@ final class DatabaseService
             consecutive_errors INT DEFAULT 0,
             last_error TEXT NULL,
             last_checked DATETIME NULL,
-            server_id BIGINT UNSIGNED DEFAULT 0,
-            remote_path TEXT NULL,
-            db_name VARCHAR(190) DEFAULT '',
-            db_user VARCHAR(190) DEFAULT '',
-            db_pass TEXT NULL,
-            backup_secret VARCHAR(190) DEFAULT '',
             created_at DATETIME NOT NULL,
             updated_at DATETIME NULL,
             PRIMARY KEY (id),
-            KEY status (status),
-            KEY server_id (server_id)
+            KEY status (status)
         ) $charset;");
 
         dbDelta("CREATE TABLE $logs (
@@ -69,70 +65,13 @@ final class DatabaseService
             KEY status (status)
         ) $charset;");
 
-        dbDelta("CREATE TABLE $backups (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            site_id BIGINT UNSIGNED DEFAULT 0,
-            job_id VARCHAR(64) DEFAULT '',
-            file_name VARCHAR(255) NOT NULL,
-            file_path TEXT NULL,
-            file_size BIGINT DEFAULT 0,
-            storage VARCHAR(30) DEFAULT 'local',
-            drive_file_id VARCHAR(190) DEFAULT '',
-            drive_link TEXT NULL,
-            status VARCHAR(30) DEFAULT 'queued',
-            progress INT DEFAULT 0,
-            message TEXT NULL,
-            created_at DATETIME NOT NULL,
-            finished_at DATETIME NULL,
-            PRIMARY KEY (id),
-            KEY site_id (site_id),
-            KEY job_id (job_id),
-            KEY status (status),
-            KEY created_at (created_at)
-        ) $charset;");
-
-        dbDelta("CREATE TABLE $servers (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            name VARCHAR(190) NOT NULL,
-            host VARCHAR(190) NOT NULL,
-            port INT DEFAULT 22,
-            username VARCHAR(190) NOT NULL,
-            auth_type VARCHAR(30) DEFAULT 'key_path',
-            key_path TEXT NULL,
-            password TEXT NULL,
-            backup_path TEXT NULL,
-            status VARCHAR(30) DEFAULT 'unknown',
-            last_checked DATETIME NULL,
-            created_at DATETIME NOT NULL,
-            PRIMARY KEY (id),
-            KEY host (host)
-        ) $charset;");
-
-        dbDelta("CREATE TABLE $scans (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            site_id BIGINT UNSIGNED DEFAULT 0,
-            job_id VARCHAR(64) DEFAULT '',
-            status VARCHAR(30) DEFAULT 'queued',
-            progress INT DEFAULT 0,
-            suspicious_count INT DEFAULT 0,
-            scanned_files INT DEFAULT 0,
-            findings LONGTEXT NULL,
-            message TEXT NULL,
-            created_at DATETIME NOT NULL,
-            finished_at DATETIME NULL,
-            PRIMARY KEY (id),
-            KEY site_id (site_id),
-            KEY job_id (job_id),
-            KEY status (status)
-        ) $charset;");
-
         add_option('wpsmm_log_retention_days', 7);
         add_option('wpsmm_check_interval', 120);
         add_option('wpsmm_dark_mode', 0);
         add_option('wpsmm_realtime_mode', 'websocket_fallback');
         add_option('wpsmm_websocket_url', '');
-        add_option('wpsmm_backup_schedule', 'daily');
-        add_option('wpsmm_backup_hour', '02:00');
-        add_option('wpsmm_backup_retention', 3);
+        add_option('wpsmm_enable_telegram_alert', 0);
+        add_option('wpsmm_hide_tgmpa_notice', 0);
+        update_option('wpsmm_schema_version', self::SCHEMA_VERSION);
     }
 }

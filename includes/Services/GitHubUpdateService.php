@@ -66,7 +66,7 @@ final class GitHubUpdateService
             'download_link' => $release['package'] ?? '',
             'last_updated' => $release['published_at'] ?? '',
             'sections' => [
-                'description' => 'SaaS-style dashboard monitor, backup, malware scan and server management for WordPress.',
+                'description' => 'WordPress website uptime, HTTP status, SSL, realtime dashboard, and log monitoring.',
                 'changelog' => wp_kses_post(nl2br((string) ($release['body'] ?? 'No changelog provided.'))),
             ],
         ];

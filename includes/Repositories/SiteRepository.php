@@ -19,6 +19,11 @@ final class SiteRepository
         global $wpdb;
         return $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . DatabaseService::table('sites') . ' WHERE id=%d', $id)) ?: null;
     }
+    public static function recentLogs(int $siteId, int $limit = 10): array
+    {
+        global $wpdb;
+        return $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . DatabaseService::table('logs') . ' WHERE site_id=%d ORDER BY checked_at DESC LIMIT %d', $siteId, max(1, min(50, $limit)))) ?: [];
+    }
     public static function save(array $data, int $id = 0): int
     {
         global $wpdb;

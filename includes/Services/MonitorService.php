@@ -29,12 +29,14 @@ final class MonitorService
         }
         $started = microtime(true);
         $timeout = max(5, (int) get_option('wpsmm_timeout', 15));
-        $res = wp_remote_get($site->url, [
+        $args = [
             'timeout' => $timeout,
             'redirection' => 5,
+            'reject_unsafe_urls' => true,
             'sslverify' => true,
             'headers' => ['User-Agent' => 'WPSMM/' . WPSMM_VERSION]
-        ]);
+        ];
+        $res = (defined('WPSMM_ALLOW_PRIVATE_HOSTS') && WPSMM_ALLOW_PRIVATE_HOSTS) ? wp_remote_get($site->url, $args) : wp_safe_remote_get($site->url, $args);
         $responseTime = round(microtime(true) - $started, 3);
         $httpCode = 0;
         $status = 'offline';
@@ -165,11 +167,11 @@ final class MonitorService
         }
         preg_match('/<title[^>]*>(.*?)<\/title>/is', $body, $m);
         $current = trim(wp_strip_all_tags($m[1] ?? ''));
-        return ($current && stripos($current, $expected) === false) ? 'Title thay đổi: ' . $current : '';
+        return ($current && stripos($current, $expected) === false) ? 'Tiêu đề thay đổi: ' . $current : '';
     }
     private static function checkSuspiciousKeywords(string $body): string
     {
-        $keywords = array_filter(array_map('trim', explode(',', (string) get_option('wpsmm_suspicious_keywords', 'casino,betting,viagra,porn,บาคาร่า,พนัน'))));
+        $keywords = array_filter(array_map('trim', preg_split('/[\r\n,]+/', (string) get_option('wpsmm_suspicious_keywords', 'casino,betting,viagra,porn')) ?: []));
         $plain = strtolower(wp_strip_all_tags(substr($body, 0, 200000)));
         foreach ($keywords as $kw) {
             if ($kw !== '' && strpos($plain, strtolower($kw)) !== false) {

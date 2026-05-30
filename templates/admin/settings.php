@@ -3,92 +3,90 @@ if (!defined('ABSPATH')) {
     exit;
 }
 require_once __DIR__ . '/partials.php';
-?>
-<div class="wrap wpsmm-wrap" data-wpsmm-page="settings">
-    <section class="wpsmm-page-title wpsmm-section-header">
-        <div>
-            <span class="wpsmm-eyebrow-light">Configuration</span>
-            <h1>SETTINGS</h1>
-            <p>Quản lý cài đặt của plugin.</p>
-        </div>
-    </section>
 
-    <section class="wpsmm-saas-card wpsmm-setting-quickbar">
-        <div>
-            <h2>Giao Diện</h2>
-            <p>Cài đặt dark mode / light mode</p>
-        </div>
-        <label class="wpsmm-switch-line">
-            <span>Dark mode</span>
-            <button type="button"
-                class="wpsmm-toggle-switch <?php echo get_option('wpsmm_dark_mode') ? 'is-on' : ''; ?>"
-                data-setting="dark_mode"
-                aria-pressed="<?php echo get_option('wpsmm_dark_mode') ? 'true' : 'false'; ?>"><i></i></button>
-        </label>
-    </section>
+$dark_mode = (bool) get_option('wpsmm_dark_mode');
+$telegram_configured = (bool) get_option('wpsmm_telegram_bot_token') && (bool) get_option('wpsmm_telegram_chat_id');
+$telegram_enabled = (bool) get_option('wpsmm_enable_telegram_alert', $telegram_configured ? 1 : 0);
+?>
+<div class="wrap wpsmm-wrap wpsmm-settings-page" data-wpsmm-page="settings">
+    <header class="wpsmm-settings-heading">
+        <h1>Cài đặt</h1>
+        <p>Quản lý các thiết lập và tùy chọn của hệ thống.</p>
+    </header>
+
+    <nav class="wpsmm-settings-tabs" aria-label="Điều hướng cài đặt">
+        <button type="button" class="wpsmm-settings-tab is-active" data-settings-target="wpsmm-settings-general">Chung</button>
+        <button type="button" class="wpsmm-settings-tab" data-settings-target="wpsmm-settings-notifications">Thông báo</button>
+        <button type="button" class="wpsmm-settings-tab" data-settings-target="wpsmm-settings-monitor">Giám sát</button>
+        <button type="button" class="wpsmm-settings-tab" data-settings-target="wpsmm-settings-integration">Tích hợp</button>
+    </nav>
 
     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="wpsmm-settings-form">
         <?php wp_nonce_field('wpsmm_save_settings'); ?>
         <input type="hidden" name="action" value="wpsmm_save_settings">
-        <input type="hidden" name="wpsmm_dark_mode" id="wpsmm-dark-mode-field"
-            value="<?php echo esc_attr(get_option('wpsmm_dark_mode') ? 1 : 0); ?>">
-        <div class="wpsmm-settings-grid">
-            <section class="wpsmm-saas-card wpsmm-settings-section">
-                <h2>Realtime</h2>
-                <p class="wpsmm-section-desc">Dashboard dùng WebSocket nếu có, fallback REST polling.</p>
-                <label>WebSocket URL<input name="wpsmm_websocket_url"
-                        value="<?php echo esc_attr(get_option('wpsmm_websocket_url')); ?>"
-                        placeholder="wss://monitor.example.com/ws"></label>
-            </section>
+        <input type="hidden" name="wpsmm_dark_mode" id="wpsmm-dark-mode-field" value="<?php echo esc_attr($dark_mode ? 1 : 0); ?>">
 
-            <section class="wpsmm-saas-card wpsmm-settings-section">
-                <h2>Monitor</h2>
-                <p class="wpsmm-section-desc">Thiết lập timeout, log retention và ngưỡng mức cảnh báo.</p>
-                <div class="wpsmm-row">
-                    <label>Thời gian giữ log (ngày)<input type="number" name="wpsmm_log_retention_days"
-                            value="<?php echo esc_attr(get_option('wpsmm_log_retention_days', 7)); ?>"></label>
-                    <label>Thời gian timeout (giây)<input type="number" name="wpsmm_timeout"
-                            value="<?php echo esc_attr(get_option('wpsmm_timeout', 15)); ?>"></label>
-                </div>
-                <div class="wpsmm-row">
-                    <label>Ngưỡng lỗi<input type="number" name="wpsmm_error_threshold"
-                            value="<?php echo esc_attr(get_option('wpsmm_error_threshold', 2)); ?>"></label>
-                    <label>Ngày cảnh báo SSL<input type="number" name="wpsmm_ssl_warning_days"
-                            value="<?php echo esc_attr(get_option('wpsmm_ssl_warning_days', 14)); ?>"></label>
-                </div>
-                <label>Từ khóa đáng ngờ<input name="wpsmm_suspicious_keywords"
-                        value="<?php echo esc_attr(get_option('wpsmm_suspicious_keywords', 'casino,betting,viagra,porn')); ?>"></label>
-            </section>
+        <div class="wpsmm-settings-layout">
+            <div class="wpsmm-settings-column">
+                <section class="wpsmm-settings-card" id="wpsmm-settings-general">
+                    <div class="wpsmm-settings-card-heading">
+                        <h2>Giao diện</h2>
+                        <p>Chọn giao diện hiển thị của hệ thống.</p>
+                    </div>
+                    <div class="wpsmm-theme-grid">
+                        <button type="button" class="wpsmm-theme-choice <?php echo !$dark_mode ? 'is-active' : ''; ?>" data-theme="light">
+                            <span class="wpsmm-theme-radio"></span><span class="dashicons dashicons-lightbulb"></span><strong>Giao diện sáng</strong>
+                        </button>
+                        <button type="button" class="wpsmm-theme-choice <?php echo $dark_mode ? 'is-active' : ''; ?>" data-theme="dark">
+                            <span class="wpsmm-theme-radio"></span><span class="dashicons dashicons-star-filled"></span><strong>Giao diện tối</strong>
+                        </button>
+                    </div>
+                </section>
 
-            <section class="wpsmm-saas-card wpsmm-settings-section">
-                <h2>Backup</h2>
-                <p class="wpsmm-section-desc">Lịch backup nên và số bản local được giữ lại.</p>
-                <div class="wpsmm-row">
-                    <label>Lịch backup<select name="wpsmm_backup_schedule">
-                            <option value="disabled" <?php selected(get_option('wpsmm_backup_schedule'), 'disabled'); ?>>Tắt</option>
-                            <option value="daily" <?php selected(get_option('wpsmm_backup_schedule', 'daily'), 'daily'); ?>>Hàng ngày</option>
-                            <option value="weekly" <?php selected(get_option('wpsmm_backup_schedule'), 'weekly'); ?>>Hàng tuần</option>
-                        </select></label>
-                    <label>Giờ backup<input type="time" name="wpsmm_backup_hour"
-                            value="<?php echo esc_attr(get_option('wpsmm_backup_hour', '02:00')); ?>"></label>
-                </div>
-                <label>Giữ số bản local<input type="number" name="wpsmm_backup_retention"
-                        value="<?php echo esc_attr(get_option('wpsmm_backup_retention', 3)); ?>"></label>
-            </section>
+                <section class="wpsmm-settings-card" id="wpsmm-settings-monitor">
+                    <div class="wpsmm-settings-card-heading"><h2>Cấu hình giám sát</h2><p>Điều chỉnh thời gian lưu trữ và ngưỡng cảnh báo.</p></div>
+                    <label class="wpsmm-setting-field"><span>Số ngày lưu log</span><small>Số ngày hệ thống lưu trữ log giám sát.</small><span class="wpsmm-input-unit"><input type="number" min="1" name="wpsmm_log_retention_days" value="<?php echo esc_attr(get_option('wpsmm_log_retention_days', 7)); ?>"><em>ngày</em></span></label>
+                    <label class="wpsmm-setting-field"><span>Timeout</span><small>Thời gian tối đa chờ phản hồi của website.</small><span class="wpsmm-input-unit"><input type="number" min="5" name="wpsmm_timeout" value="<?php echo esc_attr(get_option('wpsmm_timeout', 15)); ?>"><em>giây</em></span></label>
+                    <div class="wpsmm-settings-inline">
+                        <label class="wpsmm-setting-field"><span>Ngưỡng lỗi liên tiếp</span><small>Số lần lỗi trước khi cảnh báo.</small><span class="wpsmm-input-unit"><input type="number" min="1" name="wpsmm_error_threshold" value="<?php echo esc_attr(get_option('wpsmm_error_threshold', 2)); ?>"><em>lần</em></span></label>
+                        <label class="wpsmm-setting-field"><span>Ngày cảnh báo SSL</span><small>Cảnh báo trước khi SSL hết hạn.</small><span class="wpsmm-input-unit"><input type="number" min="1" name="wpsmm_ssl_warning_days" value="<?php echo esc_attr(get_option('wpsmm_ssl_warning_days', 14)); ?>"><em>ngày</em></span></label>
+                    </div>
+                    <label class="wpsmm-setting-field"><span>Từ khóa đáng ngờ</span><small>Nhập mỗi từ khóa trên một dòng hoặc phân cách bằng dấu phẩy.</small><textarea name="wpsmm_suspicious_keywords" rows="6"><?php echo esc_textarea(get_option('wpsmm_suspicious_keywords', "phishing\nmalware\nhack\ndeface\nsuspicious\nspam")); ?></textarea></label>
+                </section>
+            </div>
 
-            <section class="wpsmm-saas-card wpsmm-settings-section">
-                <h2>Cảnh báo</h2>
-                <p class="wpsmm-section-desc">ửi thông báo khi website lỗi, SSL sắp hết hạn, backup thất bại hoặc có dấu hiệu bất thường.</p>
-                <label>Email nhận cảnh báo<input name="wpsmm_alert_email"
-                        value="<?php echo esc_attr(get_option('wpsmm_alert_email')); ?>"></label>
-                <label class="wpsmm-check"><input type="checkbox" name="wpsmm_enable_email_alert" value="1" <?php checked(get_option('wpsmm_enable_email_alert')); ?>> Bật email alert</label>
-                <label>Telegram Bot Token<?php wpsmm_secret_input('wpsmm_telegram_bot_token', get_option('wpsmm_telegram_bot_token')); ?></label>
-                <label>Telegram Chat ID<input name="wpsmm_telegram_chat_id"
-                        value="<?php echo esc_attr(get_option('wpsmm_telegram_chat_id')); ?>"></label>
-                <label class="wpsmm-check"><input type="checkbox" name="wpsmm_enable_zalo_alert" value="1" <?php checked(get_option('wpsmm_enable_zalo_alert')); ?>> Bật Zalo webhook</label>
-                <label>Zalo Webhook URL<?php wpsmm_secret_input('wpsmm_zalo_webhook_url', get_option('wpsmm_zalo_webhook_url')); ?></label>
-            </section>
+            <div class="wpsmm-settings-column">
+                <section class="wpsmm-settings-card" id="wpsmm-settings-notifications">
+                    <div class="wpsmm-settings-card-heading"><h2>Thông báo</h2><p>Cấu hình các kênh nhận thông báo khi website có lỗi hoặc sự cố.</p></div>
+                    <div class="wpsmm-channel">
+                        <div class="wpsmm-channel-heading"><span class="wpsmm-channel-icon"><span class="dashicons dashicons-email-alt"></span></span><div><strong>Email</strong><small>Nhận thông báo qua email.</small></div><label class="wpsmm-channel-switch"><input type="checkbox" name="wpsmm_enable_email_alert" value="1" <?php checked(get_option('wpsmm_enable_email_alert')); ?>><i></i></label></div>
+                        <label class="wpsmm-setting-field"><span>Email nhận thông báo</span><input type="email" name="wpsmm_alert_email" value="<?php echo esc_attr(get_option('wpsmm_alert_email')); ?>" placeholder="admin@example.com"></label>
+                    </div>
+                    <div class="wpsmm-channel">
+                        <div class="wpsmm-channel-heading"><span class="wpsmm-channel-icon is-zalo">Zalo</span><div><strong>Zalo</strong><small>Nhận thông báo qua Zalo webhook.</small></div><label class="wpsmm-channel-switch"><input type="checkbox" name="wpsmm_enable_zalo_alert" value="1" <?php checked(get_option('wpsmm_enable_zalo_alert')); ?>><i></i></label></div>
+                        <label class="wpsmm-setting-field"><span>Webhook URL</span><?php wpsmm_secret_input('wpsmm_zalo_webhook_url', get_option('wpsmm_zalo_webhook_url'), 'https://example.zalo.me/webhook/...'); ?></label>
+                    </div>
+                    <div class="wpsmm-channel">
+                        <div class="wpsmm-channel-heading"><span class="wpsmm-channel-icon is-telegram"><span class="dashicons dashicons-location-alt"></span></span><div><strong>Telegram</strong><small>Nhận thông báo qua Telegram bot.</small></div><label class="wpsmm-channel-switch"><input type="checkbox" name="wpsmm_enable_telegram_alert" value="1" <?php checked($telegram_enabled); ?>><i></i></label></div>
+                        <div class="wpsmm-settings-inline">
+                            <label class="wpsmm-setting-field"><span>Mã bot</span><?php wpsmm_secret_input('wpsmm_telegram_bot_token', get_option('wpsmm_telegram_bot_token'), '123456789:AAE...'); ?></label>
+                            <label class="wpsmm-setting-field"><span>ID cuộc trò chuyện</span><input name="wpsmm_telegram_chat_id" value="<?php echo esc_attr(get_option('wpsmm_telegram_chat_id')); ?>" placeholder="-1001234567890"></label>
+                        </div>
+                    </div>
+                </section>
+                <section class="wpsmm-settings-card" id="wpsmm-settings-integration">
+                    <div class="wpsmm-settings-card-heading"><h2>Tích hợp thời gian thực</h2><p>Bảng điều khiển dùng WebSocket nếu được cấu hình và tự động chuyển sang truy vấn REST định kỳ khi cần.</p></div>
+                    <label class="wpsmm-setting-field"><span>WebSocket URL</span><input name="wpsmm_websocket_url" value="<?php echo esc_attr(get_option('wpsmm_websocket_url')); ?>" placeholder="wss://monitor.example.com/ws"></label>
+                </section>
+                <section class="wpsmm-settings-card">
+                    <div class="wpsmm-settings-card-heading"><h2>Tùy chọn quản trị</h2><p>Điều chỉnh các thành phần hiển thị trong khu vực quản trị WordPress.</p></div>
+                    <label class="wpsmm-admin-option">
+                        <input type="checkbox" name="wpsmm_hide_tgmpa_notice" value="1" <?php checked(get_option('wpsmm_hide_tgmpa_notice')); ?>>
+                        <span><strong>Ẩn thông báo TGMPA</strong><small>Ẩn khối thông báo <code>setting-error-tgmpa</code> trên các trang quản trị WordPress.</small></span>
+                    </label>
+                </section>
+            </div>
         </div>
-        <div class="wpsmm-savebar"><button class="button button-primary button-hero">Lưu cài đặt</button></div>
+        <div class="wpsmm-settings-savebar"><button class="button button-primary"><span class="dashicons dashicons-saved"></span>Lưu thay đổi</button></div>
     </form>
 </div>
