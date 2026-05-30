@@ -76,6 +76,9 @@ final class SecurityService
     public static function isPublicHost(string $host): bool
     {
         $host = trim($host, " \t\n\r\0\x0B[]");
+        if (defined('WPSMM_ALLOW_PRIVATE_HOSTS') && WPSMM_ALLOW_PRIVATE_HOSTS) {
+            return $host !== '';
+        }
         if ($host === '' || in_array(strtolower($host), ['localhost', 'localhost.localdomain'], true)) {
             return false;
         }
