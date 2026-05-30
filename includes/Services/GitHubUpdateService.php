@@ -162,6 +162,16 @@ final class GitHubUpdateService
             }
             return esc_url_raw((string) ($asset['browser_download_url'] ?? ''));
         }
+        return self::sourceArchiveUrl($release);
+    }
+
+    private static function sourceArchiveUrl(array $release): string
+    {
+        $repo = self::repo();
+        $tag = trim((string) ($release['tag_name'] ?? ''));
+        if ($repo && preg_match('/^[0-9A-Za-z._+-]+$/', $tag)) {
+            return 'https://codeload.github.com/' . rawurlencode($repo['owner']) . '/' . rawurlencode($repo['repo']) . '/zip/refs/tags/' . rawurlencode($tag);
+        }
         return esc_url_raw((string) ($release['zipball_url'] ?? ''));
     }
 
