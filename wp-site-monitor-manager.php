@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Site Monitor Manager
  * Description: Bảng điều khiển giám sát nhiều website WordPress: uptime, trạng thái HTTP, SSL, REST API, thời gian thực và biểu đồ.
- * Version: 2.0.2
+ * Version: 2.1.0
  * Author: TNStack
  * Author URI: https://tnstack.com
  * Text Domain: wp-site-monitor-manager
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WPSMM_VERSION', '2.0.2');
+define('WPSMM_VERSION', '2.1.0');
 define('WPSMM_PLUGIN_FILE', __FILE__);
 define('WPSMM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WPSMM_PLUGIN_URL', plugin_dir_url(__FILE__));
