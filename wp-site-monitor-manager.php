@@ -30,7 +30,7 @@ function wpsmm_app(): WPSMM\Plugin
 add_action('plugins_loaded', static function () {
     if (version_compare(PHP_VERSION, WPSMM_MIN_PHP, '<')) {
         add_action('admin_notices', static function () {
-            echo '<div class="notice notice-error"><p>WP Site Monitor Manager yeu cau PHP ' . esc_html(WPSMM_MIN_PHP) . ' tro len.</p></div>';
+            echo '<div class="notice notice-error"><p>WP Site Monitor Manager yêu cầu PHP ' . esc_html(WPSMM_MIN_PHP) . ' trở lên.</p></div>';
         });
         return;
     }

@@ -1,6 +1,7 @@
 <?php
 namespace WPSMM\Services;
 
+use WPSMM\Plugin;
 use WPSMM\Repositories\SiteRepository;
 
 if (!defined('ABSPATH')) {
@@ -11,9 +12,19 @@ final class MonitorService
 {
     public static function checkAll(bool $manual = false): void
     {
-        foreach (SiteRepository::all() as $site) {
+        update_option('wpsmm_last_cron_run', time(), false);
+        $limit = max(1, min(100, (int) get_option('wpsmm_batch_size', 10)));
+        $total = SiteRepository::enabledCount();
+        $offset = $total ? ((int) get_option('wpsmm_batch_offset', 0) % $total) : 0;
+        $sites = SiteRepository::enabledBatch($limit, $offset);
+        if (!$sites && $offset > 0) {
+            $offset = 0;
+            $sites = SiteRepository::enabledBatch($limit, 0);
+        }
+        foreach ($sites as $site) {
             self::check((int) $site->id, $manual);
         }
+        update_option('wpsmm_batch_offset', $total ? (($offset + count($sites)) % $total) : 0, false);
         self::cleanupOldLogs();
     }
 
@@ -24,9 +35,13 @@ final class MonitorService
         if (!$site) {
             return ['ok' => false, 'message' => 'Website không tồn tại'];
         }
+        if (!$manual && empty($site->monitor_enabled)) {
+            return ['ok' => false, 'status' => 'paused', 'message' => 'Giám sát đang tạm dừng'];
+        }
         if (!SecurityService::publicHttpUrl((string) $site->url)) {
             return ['ok' => false, 'message' => 'URL không hợp lệ hoặc không phải HTTP/HTTPS công khai'];
         }
+        $endpoint = self::monitorEndpoint($site);
         $started = microtime(true);
         $timeout = max(5, (int) get_option('wpsmm_timeout', 15));
         $args = [
@@ -36,7 +51,7 @@ final class MonitorService
             'sslverify' => true,
             'headers' => ['User-Agent' => 'WPSMM/' . WPSMM_VERSION]
         ];
-        $res = (defined('WPSMM_ALLOW_PRIVATE_HOSTS') && WPSMM_ALLOW_PRIVATE_HOSTS) ? wp_remote_get($site->url, $args) : wp_safe_remote_get($site->url, $args);
+        $res = (defined('WPSMM_ALLOW_PRIVATE_HOSTS') && WPSMM_ALLOW_PRIVATE_HOSTS) ? wp_remote_get($endpoint, $args) : wp_safe_remote_get($endpoint, $args);
         $responseTime = round(microtime(true) - $started, 3);
         $httpCode = 0;
         $status = 'offline';
@@ -62,6 +77,13 @@ final class MonitorService
                 }
             }
         }
+        $headers = is_wp_error($res) ? [] : wp_remote_retrieve_headers($res);
+        $technical = [
+            'endpoint' => $endpoint,
+            'transport_error' => is_wp_error($res) ? $res->get_error_code() : '',
+            'redirects_allowed' => 5,
+            'response_headers' => self::safeResponseHeaders(is_object($headers) && method_exists($headers, 'getAll') ? $headers->getAll() : (array) $headers),
+        ];
         $ssl = self::sslInfo((string) $site->url);
         if ($ssl['status'] === 'ssl_error') {
             $status = 'ssl_error';
@@ -73,14 +95,18 @@ final class MonitorService
         $bad = !in_array($status, ['online', 'redirect'], true);
         $consecutive = $bad ? ((int) $site->consecutive_errors + 1) : 0;
         $health = self::healthScore($status, $responseTime, $ssl['days_left']);
+        $agent = self::agentStatus($site);
         $wpdb->insert(DatabaseService::table('logs'), [
             'site_id' => $siteId,
             'status' => $status,
             'http_code' => $httpCode,
             'response_time' => $responseTime,
             'message' => $message,
+            'endpoint_url' => $endpoint,
+            'technical_details' => wp_json_encode($technical),
             'checked_at' => current_time('mysql')
         ]);
+        self::updateIncident($siteId, $status, $message);
         $period = self::siteUptime($siteId, 30);
         $wpdb->update(DatabaseService::table('sites'), [
             'status' => $status,
@@ -93,6 +119,8 @@ final class MonitorService
             'health_score' => $health,
             'consecutive_errors' => $consecutive,
             'last_error' => $bad ? $message : '',
+            'agent_status' => $agent,
+            'agent_checked_at' => current_time('mysql'),
             'last_checked' => current_time('mysql')
         ], ['id' => $siteId]);
         if ($consecutive >= max(1, (int) get_option('wpsmm_error_threshold', 2))) {
@@ -106,6 +134,7 @@ final class MonitorService
         global $wpdb;
         $days = max(1, (int) get_option('wpsmm_log_retention_days', 7));
         $wpdb->query($wpdb->prepare('DELETE FROM ' . DatabaseService::table('logs') . ' WHERE checked_at < DATE_SUB(%s, INTERVAL %d DAY)', current_time('mysql'), $days));
+        $wpdb->query($wpdb->prepare('DELETE FROM ' . DatabaseService::table('incidents') . ' WHERE resolved_at IS NOT NULL AND resolved_at < DATE_SUB(%s, INTERVAL %d DAY)', current_time('mysql'), $days));
     }
 
     public static function stats(): array
@@ -113,13 +142,16 @@ final class MonitorService
         global $wpdb;
         $table = DatabaseService::table('sites');
         $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table");
-        $online = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status IN ('online','redirect')");
-        $offline = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status IN ('offline','server_error','ssl_error')");
-        $warning = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status IN ('client_error','not_found','title_changed','suspicious','ssl_expiring')");
-        $unknown = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status='unknown'");
+        $online = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE monitor_enabled=1 AND status IN ('online','redirect')");
+        $offline = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE monitor_enabled=1 AND status IN ('offline','server_error','ssl_error')");
+        $warning = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE monitor_enabled=1 AND status IN ('client_error','not_found','title_changed','suspicious','ssl_expiring')");
+        $unknown = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE monitor_enabled=1 AND status='unknown'");
+        $paused = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE monitor_enabled=0");
         $avgResponse = (float) $wpdb->get_var("SELECT AVG(response_time) FROM $table WHERE response_time > 0");
         $avgHealth = $total ? (int) $wpdb->get_var("SELECT AVG(health_score) FROM $table") : 0;
-        return compact('total', 'online', 'offline', 'warning', 'unknown', 'avgResponse', 'avgHealth');
+        $lastCronRun = (int) get_option('wpsmm_last_cron_run', 0);
+        $cronHealthy = $lastCronRun > 0 && (time() - $lastCronRun) <= max(300, Plugin::checkInterval() * 3);
+        return compact('total', 'online', 'offline', 'warning', 'unknown', 'paused', 'avgResponse', 'avgHealth', 'lastCronRun', 'cronHealthy');
     }
 
     public static function chartData(int $hours = 24): array
@@ -138,7 +170,63 @@ final class MonitorService
             return ['uptime' => 0, 'downtime_minutes' => 0];
         }
         $up = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM " . DatabaseService::table('logs') . " WHERE site_id=%d AND checked_at >= DATE_SUB(%s, INTERVAL %d DAY) AND status IN ('online','redirect')", $siteId, current_time('mysql'), $days));
-        return ['uptime' => round(($up / $total) * 100, 2), 'downtime_minutes' => ($total - $up) * 2];
+        return ['uptime' => round(($up / $total) * 100, 2), 'downtime_minutes' => ($total - $up) * Plugin::checkIntervalMinutes()];
+    }
+
+    private static function monitorEndpoint(object $site): string
+    {
+        $path = trim((string) ($site->health_path ?? ''));
+        if ($path === '') {
+            return (string) $site->url;
+        }
+        return untrailingslashit((string) $site->url) . '/' . ltrim($path, '/');
+    }
+
+    private static function safeResponseHeaders(array $headers): array
+    {
+        $safe = [];
+        $allowed = ['content-type', 'content-length', 'server', 'location', 'cache-control', 'x-powered-by'];
+        foreach ($headers as $name => $value) {
+            $name = strtolower((string) $name);
+            if (in_array($name, $allowed, true)) {
+                $safe[$name] = $value;
+            }
+        }
+        return $safe;
+    }
+
+    private static function agentStatus(object $site): string
+    {
+        $endpoint = untrailingslashit((string) $site->url) . '/wp-json/wpma/v1/status';
+        if (!SecurityService::publicHttpUrl($endpoint)) {
+            return 'invalid';
+        }
+        $args = ['timeout' => 5, 'redirection' => 0, 'reject_unsafe_urls' => true, 'sslverify' => true, 'headers' => ['User-Agent' => 'WPSMM/' . WPSMM_VERSION]];
+        $response = (defined('WPSMM_ALLOW_PRIVATE_HOSTS') && WPSMM_ALLOW_PRIVATE_HOSTS) ? wp_remote_get($endpoint, $args) : wp_safe_remote_get($endpoint, $args);
+        if (is_wp_error($response) || 200 !== (int) wp_remote_retrieve_response_code($response)) {
+            return 'offline';
+        }
+        $payload = json_decode((string) wp_remote_retrieve_body($response), true);
+        return !empty($payload['success']) && ($payload['agent'] ?? '') === 'wp-site-monitor-agent' ? 'online' : 'invalid';
+    }
+
+    private static function updateIncident(int $siteId, string $status, string $message): void
+    {
+        global $wpdb;
+        $table = DatabaseService::table('incidents');
+        $active = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . $table . ' WHERE site_id=%d AND resolved_at IS NULL ORDER BY id DESC LIMIT 1', $siteId));
+        $healthy = in_array($status, ['online', 'redirect'], true);
+        if ($healthy) {
+            if ($active) {
+                $wpdb->update($table, ['resolved_at' => current_time('mysql'), 'last_seen_at' => current_time('mysql')], ['id' => (int) $active->id]);
+            }
+            return;
+        }
+        if ($active) {
+            $wpdb->update($table, ['status' => $status, 'message' => $message, 'last_seen_at' => current_time('mysql'), 'check_count' => (int) $active->check_count + 1], ['id' => (int) $active->id]);
+            return;
+        }
+        $wpdb->insert($table, ['site_id' => $siteId, 'status' => $status, 'message' => $message, 'started_at' => current_time('mysql'), 'last_seen_at' => current_time('mysql'), 'check_count' => 1]);
     }
 
     private static function statusFromCode(int $code, int $expected): string
@@ -182,13 +270,16 @@ final class MonitorService
     }
     private static function sslInfo(string $url): array
     {
+        if (strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'https') {
+            return ['status' => 'ok', 'expiry' => null, 'days_left' => null, 'message' => ''];
+        }
         $host = parse_url($url, PHP_URL_HOST);
         if (!$host) {
             return ['status' => 'ok', 'expiry' => null, 'days_left' => null, 'message' => ''];
         }
         $warning = max(1, (int) get_option('wpsmm_ssl_warning_days', 14));
         if (!SecurityService::isPublicHost($host)) {
-            return ['status' => 'ssl_error', 'expiry' => null, 'days_left' => null, 'message' => 'SSL host không public'];
+            return ['status' => 'ssl_error', 'expiry' => null, 'days_left' => null, 'message' => 'Tên miền SSL không công khai'];
         }
         $context = stream_context_create(['ssl' => ['capture_peer_cert' => true, 'verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $host, 'SNI_enabled' => true]]);
         $client = @stream_socket_client('ssl://' . $host . ':443', $errno, $errstr, 5, STREAM_CLIENT_CONNECT, $context);
@@ -198,7 +289,7 @@ final class MonitorService
         $params = stream_context_get_params($client);
         $cert = $params['options']['ssl']['peer_certificate'] ?? null;
         if (!$cert) {
-            return ['status' => 'ssl_error', 'expiry' => null, 'days_left' => null, 'message' => 'Không đọc được SSL certificate'];
+            return ['status' => 'ssl_error', 'expiry' => null, 'days_left' => null, 'message' => 'Không đọc được chứng chỉ SSL'];
         }
         $parsed = openssl_x509_parse($cert);
         $validTo = (int) ($parsed['validTo_time_t'] ?? 0);

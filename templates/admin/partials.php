@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
 }
 function wpsmm_status_label(string $status): string
 {
-    $labels = ['online' => 'Đang hoạt động', 'redirect' => 'Chuyển hướng', 'offline' => 'Ngừng hoạt động', 'server_error' => 'Lỗi máy chủ', 'client_error' => 'Lỗi truy cập', 'not_found' => 'Không tìm thấy', 'title_changed' => 'Tiêu đề thay đổi', 'suspicious' => 'Nội dung đáng ngờ', 'ssl_expiring' => 'SSL sắp hết hạn', 'ssl_error' => 'Lỗi SSL', 'unknown' => 'Chưa kiểm tra', 'queued' => 'Đang chờ', 'running' => 'Đang xử lý', 'success' => 'Thành công', 'failed' => 'Thất bại'];
+    $labels = ['online' => 'Đang hoạt động', 'redirect' => 'Chuyển hướng', 'offline' => 'Ngừng hoạt động', 'server_error' => 'Lỗi máy chủ', 'client_error' => 'Lỗi truy cập', 'not_found' => 'Không tìm thấy', 'title_changed' => 'Tiêu đề thay đổi', 'suspicious' => 'Nội dung đáng ngờ', 'ssl_expiring' => 'SSL sắp hết hạn', 'ssl_error' => 'Lỗi SSL', 'unknown' => 'Chưa kiểm tra', 'paused' => 'Tạm dừng', 'queued' => 'Đang chờ', 'running' => 'Đang xử lý', 'success' => 'Thành công', 'failed' => 'Thất bại'];
     return $labels[$status] ?? $status;
 }
 function wpsmm_status_text(string $status): void

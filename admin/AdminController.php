@@ -4,6 +4,7 @@ namespace WPSMM\Admin;
 use WPSMM\Repositories\SiteRepository;
 use WPSMM\Services\DatabaseService;
 use WPSMM\Services\GitHubUpdateService;
+use WPSMM\Services\MonitorService;
 use WPSMM\Services\SecurityService;
 
 if (!defined('ABSPATH')) {
@@ -19,6 +20,7 @@ final class AdminController
         add_filter('admin_body_class', [$this, 'bodyClass']);
         add_action('admin_post_wpsmm_save_site', [$this, 'saveSite']);
         add_action('admin_post_wpsmm_delete_site', [$this, 'deleteSite']);
+        add_action('admin_post_wpsmm_bulk_sites', [$this, 'bulkSites']);
         add_action('admin_post_wpsmm_quick_login', [$this, 'quickLogin']);
         add_action('admin_post_wpsmm_reveal_credentials', [$this, 'revealCredentials']);
         add_action('admin_post_wpsmm_update_site_credentials', [$this, 'updateSiteCredentials']);
@@ -87,7 +89,7 @@ final class AdminController
             if ($credentials) {
                 nocache_headers();
             }
-            $this->render('site-detail', ['site' => $edit, 'logs' => SiteRepository::recentLogs((int) $edit->id), 'credentials' => $credentials, 'inventory' => $inventory]);
+            $this->render('site-detail', ['site' => $edit, 'logs' => SiteRepository::recentLogs((int) $edit->id), 'incidents' => SiteRepository::recentIncidents((int) $edit->id), 'credentials' => $credentials, 'inventory' => $inventory]);
             return;
         }
         if ($edit || $action === 'new') {
@@ -175,6 +177,8 @@ final class AdminController
             'name' => sanitize_text_field(wp_unslash($_POST['name'] ?? '')),
             'url' => SecurityService::publicHttpUrl($url),
             'group_name' => sanitize_text_field(wp_unslash($_POST['group_name'] ?? '')),
+            'monitor_enabled' => !empty($_POST['monitor_enabled']) ? 1 : 0,
+            'health_path' => sanitize_text_field(wp_unslash($_POST['health_path'] ?? '')),
             'expected_status' => absint($_POST['expected_status'] ?? 200) ?: 200,
             'expected_title' => sanitize_text_field(wp_unslash($_POST['expected_title'] ?? '')),
         ];
@@ -202,12 +206,20 @@ final class AdminController
             $this->notice('error', 'Tên website hoặc URL không hợp lệ.');
             $this->redirect('wpsmm-sites');
         }
+        $data['url'] = untrailingslashit($data['url']);
+        if (SiteRepository::findByUrl($data['url'], $id)) {
+            $this->notice('error', 'Website này đã tồn tại trong danh sách giám sát.');
+            $this->redirect('wpsmm-sites');
+        }
         if ($loginUrl !== '' && !$data['login_url']) {
             $this->notice('error', 'URL đăng nhập không hợp lệ.');
             $this->redirect('wpsmm-sites');
         }
         $savedId = SiteRepository::save($data, $id);
         delete_transient('wpsmm_inventory_' . $savedId);
+        if ($id <= 0 && !empty($data['monitor_enabled'])) {
+            MonitorService::check($savedId, true);
+        }
         $this->notice('success', 'Đã lưu website.');
         $this->redirect('wpsmm-sites&action=view&id=' . $savedId);
     }
@@ -221,6 +233,29 @@ final class AdminController
         check_admin_referer('wpsmm_delete_site_' . $id);
         SiteRepository::delete($id);
         $this->notice('success', 'Đã xóa website.');
+        $this->redirect('wpsmm-sites');
+    }
+
+    public function bulkSites(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die();
+        }
+        check_admin_referer('wpsmm_bulk_sites');
+        $ids = array_values(array_filter(array_map('absint', (array) ($_POST['site_ids'] ?? []))));
+        $action = sanitize_key(wp_unslash($_POST['bulk_action'] ?? ''));
+        foreach ($ids as $id) {
+            if ($action === 'pause') {
+                SiteRepository::save(['monitor_enabled' => 0], $id);
+            } elseif ($action === 'resume') {
+                SiteRepository::save(['monitor_enabled' => 1], $id);
+            } elseif ($action === 'check') {
+                MonitorService::check($id, true);
+            } elseif ($action === 'delete') {
+                SiteRepository::delete($id);
+            }
+        }
+        $this->notice('success', 'Đã xử lý thao tác hàng loạt cho ' . count($ids) . ' website.');
         $this->redirect('wpsmm-sites');
     }
 
@@ -373,6 +408,12 @@ final class AdminController
             update_option($key, !empty($_POST[$key]) ? 1 : 0);
         }
         update_option('wpsmm_log_retention_days', max(1, absint($_POST['wpsmm_log_retention_days'] ?? 7)));
+        update_option('wpsmm_batch_size', max(1, min(100, absint($_POST['wpsmm_batch_size'] ?? 10))));
+        $checkInterval = min(DAY_IN_SECONDS, max(MINUTE_IN_SECONDS, absint($_POST['wpsmm_check_interval_minutes'] ?? 2) * MINUTE_IN_SECONDS));
+        if ($checkInterval !== (int) get_option('wpsmm_check_interval', 120)) {
+            update_option('wpsmm_check_interval', $checkInterval);
+            wpsmm_app()->rescheduleCheckCron();
+        }
         update_option('wpsmm_error_threshold', max(1, absint($_POST['wpsmm_error_threshold'] ?? 2)));
         update_option('wpsmm_timeout', max(5, absint($_POST['wpsmm_timeout'] ?? 15)));
         update_option('wpsmm_ssl_warning_days', max(1, absint($_POST['wpsmm_ssl_warning_days'] ?? 14)));
@@ -453,7 +494,7 @@ final class AdminController
         }
         $payload = json_decode((string) wp_remote_retrieve_body($response), true);
         if (wp_remote_retrieve_response_code($response) !== 200 || empty($payload['success']) || !is_array($payload['inventory'] ?? null)) {
-            return ['success' => false, 'message' => (string) ($payload['message'] ?? 'Agent chưa hỗ trợ tải thông tin plugin và theme.')];
+            return ['success' => false, 'message' => (string) ($payload['message'] ?? 'Agent chưa hỗ trợ tải thông tin plugin và giao diện.')];
         }
         $result = ['success' => true, 'data' => $payload['inventory']];
         set_transient($cacheKey, $result, 5 * MINUTE_IN_SECONDS);

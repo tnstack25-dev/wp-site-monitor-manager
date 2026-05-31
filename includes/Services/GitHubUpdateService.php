@@ -66,8 +66,8 @@ final class GitHubUpdateService
             'download_link' => $release['package'] ?? '',
             'last_updated' => $release['published_at'] ?? '',
             'sections' => [
-                'description' => 'WordPress website uptime, HTTP status, SSL, realtime dashboard, and log monitoring.',
-                'changelog' => wp_kses_post(nl2br((string) ($release['body'] ?? 'No changelog provided.'))),
+                'description' => 'Giám sát thời gian hoạt động, trạng thái HTTP, SSL, bảng điều khiển thời gian thực và nhật ký của website WordPress.',
+                'changelog' => wp_kses_post(nl2br((string) ($release['body'] ?? 'Không có nhật ký thay đổi.'))),
             ],
         ];
     }

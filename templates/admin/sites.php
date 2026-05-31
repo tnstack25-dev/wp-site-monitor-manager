@@ -12,17 +12,20 @@ require_once __DIR__ . '/partials.php';
 
     <section class="wpsmm-sites-summary">
         <article><span class="dashicons dashicons-admin-site-alt3 blue"></span><div><small>Tổng website</small><strong><?php echo esc_html(count($sites)); ?></strong></div></article>
-        <article><span class="dashicons dashicons-yes-alt green"></span><div><small>Đang hoạt động</small><strong><?php echo esc_html(count(array_filter($sites, static fn($site) => in_array($site->status, ['online', 'redirect'], true)))); ?></strong></div></article>
-        <article><span class="dashicons dashicons-warning orange"></span><div><small>Gặp sự cố</small><strong><?php echo esc_html(count(array_filter($sites, static fn($site) => in_array($site->status, ['client_error', 'not_found', 'title_changed', 'suspicious', 'ssl_expiring'], true)))); ?></strong></div></article>
-        <article><span class="dashicons dashicons-dismiss red"></span><div><small>Ngừng hoạt động</small><strong><?php echo esc_html(count(array_filter($sites, static fn($site) => in_array($site->status, ['offline', 'server_error', 'ssl_error'], true)))); ?></strong></div></article>
+        <article><span class="dashicons dashicons-yes-alt green"></span><div><small>Đang hoạt động</small><strong><?php echo esc_html(count(array_filter($sites, static fn($site) => !empty($site->monitor_enabled) && in_array($site->status, ['online', 'redirect'], true)))); ?></strong></div></article>
+        <article><span class="dashicons dashicons-warning orange"></span><div><small>Gặp sự cố</small><strong><?php echo esc_html(count(array_filter($sites, static fn($site) => !empty($site->monitor_enabled) && in_array($site->status, ['client_error', 'not_found', 'title_changed', 'suspicious', 'ssl_expiring'], true)))); ?></strong></div></article>
+        <article><span class="dashicons dashicons-dismiss red"></span><div><small>Ngừng hoạt động</small><strong><?php echo esc_html(count(array_filter($sites, static fn($site) => !empty($site->monitor_enabled) && in_array($site->status, ['offline', 'server_error', 'ssl_error'], true)))); ?></strong></div></article>
     </section>
 
     <section class="wpsmm-panel wpsmm-sites-list-panel">
         <header class="wpsmm-sites-toolbar"><div><h2>Danh sách website</h2><p>Tìm kiếm, lọc và thao tác nhanh trên từng website.</p></div><label class="wpsmm-search"><span class="dashicons dashicons-search"></span><input id="wpsmm-manage-search" type="search" placeholder="Tìm kiếm website..."></label></header>
         <nav class="wpsmm-site-tabs" id="wpsmm-manage-tabs"><button type="button" class="is-active" data-manage-filter="all">Tất cả <b><?php echo esc_html(count($sites)); ?></b></button><button type="button" data-manage-filter="online">Đang hoạt động</button><button type="button" data-manage-filter="warning">Gặp sự cố</button><button type="button" data-manage-filter="offline">Ngừng hoạt động</button></nav>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="wpsmm_bulk_sites"><?php wp_nonce_field('wpsmm_bulk_sites'); ?>
+            <p><select name="bulk_action" required><option value="">Thao tác hàng loạt</option><option value="check">Kiểm tra ngay</option><option value="pause">Tạm dừng giám sát</option><option value="resume">Bật giám sát</option><option value="delete">Xóa website</option></select> <button class="button">Áp dụng</button></p>
         <div class="wpsmm-table-scroll">
             <table class="widefat wpsmm-dashboard-table" id="wpsmm-manage-table">
-                <thead><tr><th>Website</th><th>Nhóm</th><th>Trạng thái</th><th>Uptime</th><th>Phản hồi</th><th>SSL</th><th>Lần kiểm tra cuối</th><th>Thao tác</th></tr></thead>
+                <thead><tr><th><input type="checkbox" onclick="document.querySelectorAll('input[name=&quot;site_ids[]&quot;]').forEach((item) => item.checked = this.checked)"></th><th>Website</th><th>Nhóm</th><th>Trạng thái</th><th>Agent</th><th>Uptime</th><th>Phản hồi</th><th>SSL</th><th>Lần kiểm tra cuối</th><th>Thao tác</th></tr></thead>
                 <tbody>
                 <?php foreach ($sites as $site): ?>
                     <?php
@@ -30,9 +33,11 @@ require_once __DIR__ . '/partials.php';
                     $group = in_array($site->status, ['online', 'redirect'], true) ? 'online' : (in_array($site->status, ['offline', 'server_error', 'ssl_error'], true) ? 'offline' : 'warning');
                     ?>
                     <tr data-manage-row data-status-group="<?php echo esc_attr($group); ?>" data-search="<?php echo esc_attr(strtolower($site->name . ' ' . $site->url . ' ' . $site->group_name)); ?>">
+                        <td><input type="checkbox" name="site_ids[]" value="<?php echo esc_attr($site->id); ?>"></td>
                         <td><div class="wpsmm-site-cell"><span class="dashicons dashicons-admin-site-alt3"></span><div><strong><a href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-sites&action=view&id=' . $site->id)); ?>"><?php echo esc_html($site->name); ?></a></strong><small><?php echo esc_html($site->url); ?></small></div></div></td>
                         <td><?php echo esc_html($site->group_name ?: 'Tất cả website'); ?></td>
-                        <td><span class="wpsmm-status-pill <?php echo esc_attr($tone); ?>"><i></i><?php wpsmm_status_text($site->status); ?></span></td>
+                        <td><span class="wpsmm-status-pill <?php echo empty($site->monitor_enabled) ? 'muted' : esc_attr($tone); ?>"><i></i><?php echo empty($site->monitor_enabled) ? 'Tạm dừng' : esc_html(wpsmm_status_label($site->status)); ?></span></td>
+                        <td><span class="wpsmm-status-pill <?php echo ($site->agent_status ?? '') === 'online' ? 'success' : 'muted'; ?>"><i></i><?php echo esc_html(($site->agent_status ?? '') === 'online' ? 'Trực tuyến' : 'Ngoại tuyến'); ?></span></td>
                         <td><strong><?php echo esc_html(number_format((float) $site->uptime_percent, 2)); ?>%</strong></td>
                         <td><strong class="<?php echo (float) $site->response_time > 2 ? 'wpsmm-text-danger' : 'wpsmm-text-success'; ?>"><?php echo $site->response_time ? esc_html(round((float) $site->response_time * 1000) . ' ms') : '-'; ?></strong></td>
                         <td><?php if ($site->ssl_days_left === null): ?><span class="wpsmm-ssl muted">Chưa có dữ liệu</span><?php else: ?><span class="wpsmm-ssl <?php echo (int) $site->ssl_days_left <= 14 ? 'danger' : 'success'; ?>"><span class="dashicons dashicons-lock"></span><?php echo (int) $site->ssl_days_left < 0 ? 'Hết hạn' : 'Còn ' . esc_html($site->ssl_days_left) . ' ngày'; ?></span><?php endif; ?></td>
@@ -43,6 +48,7 @@ require_once __DIR__ . '/partials.php';
                 </tbody>
             </table>
         </div>
+        </form>
         <footer class="wpsmm-table-footer"><span id="wpsmm-manage-count"><?php echo esc_html(count($sites)); ?> website</span></footer>
     </section>
 </div>

@@ -15,6 +15,10 @@ final class Plugin
 {
     public const CHECK_CRON = 'wpsmm_monitor_check_event';
     public const LOG_CLEAN_CRON = 'wpsmm_log_clean_event';
+    private const CHECK_SCHEDULE = 'wpsmm_monitor_interval';
+    private const DEFAULT_CHECK_INTERVAL = 120;
+    private const MIN_CHECK_INTERVAL = 60;
+    private const MAX_CHECK_INTERVAL = DAY_IN_SECONDS;
     private static ?self $instance = null;
     private ?AdminController $admin = null;
     private ?ApiController $api = null;
@@ -30,7 +34,11 @@ final class Plugin
     public function boot(): void
     {
         $this->cleanupRemovedFeatures();
-        add_filter('cron_schedules', [$this, 'cronSchedules']);
+        if (get_option('wpsmm_schema_version') !== DatabaseService::SCHEMA_VERSION) {
+            DatabaseService::install();
+        }
+        $this->registerCronSchedules();
+        $this->scheduleCrons();
         add_action('init', [$this, 'loadTextdomain']);
         add_action('admin_init', [$this, 'maybeUpgrade']);
         add_action(self::CHECK_CRON, [MonitorService::class, 'checkAll']);
@@ -49,14 +57,31 @@ final class Plugin
 
     public function cronSchedules(array $schedules): array
     {
-        $schedules['wpsmm_2_minutes'] = ['interval' => 120, 'display' => 'WPSMM mỗi 2 phút'];
-        $schedules['wpsmm_5_minutes'] = ['interval' => 300, 'display' => 'WPSMM mỗi 5 phút'];
+        $interval = self::checkInterval();
+        $schedules[self::CHECK_SCHEDULE] = ['interval' => $interval, 'display' => sprintf('WPSMM mỗi %d phút', (int) ceil($interval / MINUTE_IN_SECONDS))];
         $schedules['wpsmm_weekly'] = ['interval' => WEEK_IN_SECONDS, 'display' => 'WPSMM hàng tuần'];
         return $schedules;
     }
 
+    public static function checkInterval(): int
+    {
+        return max(self::MIN_CHECK_INTERVAL, min(self::MAX_CHECK_INTERVAL, (int) get_option('wpsmm_check_interval', self::DEFAULT_CHECK_INTERVAL)));
+    }
+
+    public static function checkIntervalMinutes(): int
+    {
+        return (int) ceil(self::checkInterval() / MINUTE_IN_SECONDS);
+    }
+
+    public function rescheduleCheckCron(): void
+    {
+        wp_clear_scheduled_hook(self::CHECK_CRON);
+        $this->scheduleCheckCron();
+    }
+
     public function activate(): void
     {
+        $this->registerCronSchedules();
         DatabaseService::install();
         $this->scheduleCrons();
         update_option('wpsmm_version', WPSMM_VERSION);
@@ -102,11 +127,25 @@ final class Plugin
 
     private function scheduleCrons(): void
     {
-        if (!wp_next_scheduled(self::CHECK_CRON)) {
-            wp_schedule_event(time() + 30, 'wpsmm_2_minutes', self::CHECK_CRON);
-        }
+        $this->scheduleCheckCron();
         if (!wp_next_scheduled(self::LOG_CLEAN_CRON)) {
             wp_schedule_event(time() + 3600, 'daily', self::LOG_CLEAN_CRON);
+        }
+    }
+
+    private function scheduleCheckCron(): void
+    {
+        if (wp_next_scheduled(self::CHECK_CRON) && wp_get_schedule(self::CHECK_CRON) === self::CHECK_SCHEDULE) {
+            return;
+        }
+        wp_clear_scheduled_hook(self::CHECK_CRON);
+        wp_schedule_event(time() + 30, self::CHECK_SCHEDULE, self::CHECK_CRON);
+    }
+
+    private function registerCronSchedules(): void
+    {
+        if (!has_filter('cron_schedules', [$this, 'cronSchedules'])) {
+            add_filter('cron_schedules', [$this, 'cronSchedules']);
         }
     }
 }

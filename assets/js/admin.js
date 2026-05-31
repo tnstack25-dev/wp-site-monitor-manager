@@ -54,7 +54,7 @@
   const isIn = (status, group) => group.includes(status);
   const percent = (value) => `${Number(value || 0).toFixed(2)}%`;
   const response = (value) => value ? `${Math.round(Number(value) * 1000)} ms` : "-";
-  const label = (status) => ({ online: "Đang hoạt động", redirect: "Chuyển hướng", offline: "Ngừng hoạt động", server_error: "Lỗi máy chủ", ssl_error: "Lỗi SSL", ssl_expiring: "SSL sắp hết hạn", not_found: "Không tìm thấy", client_error: "Lỗi truy cập", title_changed: "Tiêu đề thay đổi", suspicious: "Nội dung đáng ngờ", unknown: "Chưa kiểm tra" })[status] || status;
+  const label = (status) => ({ online: "Đang hoạt động", redirect: "Chuyển hướng", offline: "Ngừng hoạt động", server_error: "Lỗi máy chủ", ssl_error: "Lỗi SSL", ssl_expiring: "SSL sắp hết hạn", not_found: "Không tìm thấy", client_error: "Lỗi truy cập", title_changed: "Tiêu đề thay đổi", suspicious: "Nội dung đáng ngờ", unknown: "Chưa kiểm tra", paused: "Tạm dừng" })[status] || status;
   const tone = (status) => isIn(status, good) ? "success" : isIn(status, bad) ? "danger" : status === "unknown" ? "muted" : "warning";
   const icon = (status) => isIn(status, good) ? "yes-alt" : isIn(status, bad) ? "dismiss" : "warning";
 
@@ -120,8 +120,8 @@
     const pages = Math.max(1, Math.ceil(rows.length / state.perPage));
     state.page = Math.min(state.page, pages);
     const visible = rows.slice((state.page - 1) * state.perPage, state.page * state.perPage);
-    qs("#wpsmm-sites-table tbody").innerHTML = visible.length ? visible.map((site) => `<tr><td><div class="wpsmm-site-cell"><span class="dashicons dashicons-admin-site-alt3"></span><div><strong><a href="${WPSMM.adminSites}&action=view&id=${site.id}">${esc(site.name)}</a></strong><small>${esc(site.url)}</small></div></div></td><td><span class="wpsmm-status-pill ${tone(site.status)}"><i></i>${label(site.status)}</span></td><td><strong>${percent(site.uptime_percent)}</strong></td><td><strong class="${Number(site.response_time) > 2 ? "wpsmm-text-danger" : "wpsmm-text-success"}">${response(site.response_time)}</strong></td><td>${ssl(site)}</td><td><small>${esc(site.last_checked || "Chưa kiểm tra")}</small></td><td><div class="wpsmm-row-actions"><a class="wpsmm-icon-button" href="${WPSMM.adminSites}&action=view&id=${site.id}" title="Xem chi tiết"><span class="dashicons dashicons-visibility"></span></a><button class="wpsmm-icon-button wpsmm-check-site" data-id="${site.id}" title="Kiểm tra ngay"><span class="dashicons dashicons-update"></span></button><a class="wpsmm-icon-button" href="${WPSMM.adminSites}&id=${site.id}" title="Sửa website"><span class="dashicons dashicons-edit"></span></a><a class="wpsmm-icon-button" href="${WPSMM.adminLogs}&site_id=${site.id}" title="Xem nhật ký"><span class="dashicons dashicons-chart-line"></span></a></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="wpsmm-empty-state">Không tìm thấy website phù hợp.</div></td></tr>`;
-    qs("#wpsmm-table-count").textContent = `Hien thi ${visible.length} / ${rows.length} website`;
+    qs("#wpsmm-sites-table tbody").innerHTML = visible.length ? visible.map((site) => `<tr><td><div class="wpsmm-site-cell"><span class="dashicons dashicons-admin-site-alt3"></span><div><strong><a href="${WPSMM.adminSites}&action=view&id=${site.id}">${esc(site.name)}</a></strong><small>${esc(site.url)}</small></div></div></td><td><span class="wpsmm-status-pill ${site.monitor_enabled == 0 ? "muted" : tone(site.status)}"><i></i>${site.monitor_enabled == 0 ? label("paused") : label(site.status)}</span></td><td><strong>${percent(site.uptime_percent)}</strong></td><td><strong class="${Number(site.response_time) > 2 ? "wpsmm-text-danger" : "wpsmm-text-success"}">${response(site.response_time)}</strong></td><td>${ssl(site)}</td><td><small>${esc(site.last_checked || "Chưa kiểm tra")}</small></td><td><div class="wpsmm-row-actions"><a class="wpsmm-icon-button" href="${WPSMM.adminSites}&action=view&id=${site.id}" title="Xem chi tiết"><span class="dashicons dashicons-visibility"></span></a><button class="wpsmm-icon-button wpsmm-check-site" data-id="${site.id}" title="Kiểm tra ngay"><span class="dashicons dashicons-update"></span></button><a class="wpsmm-icon-button" href="${WPSMM.adminSites}&id=${site.id}" title="Sửa website"><span class="dashicons dashicons-edit"></span></a><a class="wpsmm-icon-button" href="${WPSMM.adminLogs}&site_id=${site.id}" title="Xem nhật ký"><span class="dashicons dashicons-chart-line"></span></a></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="wpsmm-empty-state">Không tìm thấy website phù hợp.</div></td></tr>`;
+    qs("#wpsmm-table-count").textContent = `Hiển thị ${visible.length} / ${rows.length} website`;
     qs("#wpsmm-site-pagination").innerHTML = Array.from({ length: pages }, (_, index) => `<button type="button" class="${state.page === index + 1 ? "is-active" : ""}" data-page="${index + 1}">${index + 1}</button>`).join("");
     qs("#wpsmm-site-pagination").onclick = (event) => { const button = event.target.closest("button"); if (button) { state.page = Number(button.dataset.page); renderSites(); } };
   }
@@ -220,10 +220,23 @@
     if (!modal) return;
     let data = {};
     try { data = JSON.parse(button.dataset.log || "{}"); } catch (error) {}
-    const labels = { time: "Thời gian", site: "Website", url: "URL", status: "Trạng thái", http: "HTTP", response: "Thời gian phản hồi", message: "Thông điệp" };
-    qs("#wpsmm-log-detail").innerHTML = Object.keys(labels).map((key) => `<div><dt>${labels[key]}</dt><dd>${esc(data[key] || "-")}</dd></div>`).join("");
+    const labels = { time: "Thời gian", site: "Website", url: "URL", endpoint: "Đường dẫn kiểm tra", status: "Trạng thái", http: "HTTP", response: "Thời gian phản hồi", message: "Thông điệp", technical: "Chi tiết kỹ thuật" };
+    qs("#wpsmm-log-detail").innerHTML = Object.keys(labels).map((key) => {
+      const technical = key === "technical";
+      return `<div${technical ? ' class="wpsmm-log-technical"' : ""}><dt>${labels[key]}</dt><dd>${technical ? formatTechnicalDetails(data[key]) : esc(data[key] || "-")}</dd></div>`;
+    }).join("");
     modal.classList.add("is-open");
     modal.setAttribute("aria-hidden", "false");
+  }
+
+  function formatTechnicalDetails(value) {
+    if (!value) return "-";
+    let formatted = value;
+    try {
+      const parsed = typeof value === "string" ? JSON.parse(value) : value;
+      formatted = JSON.stringify(parsed, null, 2);
+    } catch (error) {}
+    return `<pre>${esc(formatted)}</pre>`;
   }
 
   function closeLogDetail() {

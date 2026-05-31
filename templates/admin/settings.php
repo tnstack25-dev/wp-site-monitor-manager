@@ -45,8 +45,10 @@ $telegram_enabled = (bool) get_option('wpsmm_enable_telegram_alert', $telegram_c
 
                 <section class="wpsmm-settings-card" id="wpsmm-settings-monitor">
                     <div class="wpsmm-settings-card-heading"><h2>Cấu hình giám sát</h2><p>Điều chỉnh thời gian lưu trữ và ngưỡng cảnh báo.</p></div>
-                    <label class="wpsmm-setting-field"><span>Số ngày lưu log</span><small>Số ngày hệ thống lưu trữ log giám sát.</small><span class="wpsmm-input-unit"><input type="number" min="1" name="wpsmm_log_retention_days" value="<?php echo esc_attr(get_option('wpsmm_log_retention_days', 7)); ?>"><em>ngày</em></span></label>
-                    <label class="wpsmm-setting-field"><span>Timeout</span><small>Thời gian tối đa chờ phản hồi của website.</small><span class="wpsmm-input-unit"><input type="number" min="5" name="wpsmm_timeout" value="<?php echo esc_attr(get_option('wpsmm_timeout', 15)); ?>"><em>giây</em></span></label>
+                    <label class="wpsmm-setting-field"><span>Tần suất kiểm tra</span><small>Khoảng thời gian giữa hai lần tự động kiểm tra toàn bộ website.</small><span class="wpsmm-input-unit"><input type="number" min="1" max="1440" name="wpsmm_check_interval_minutes" value="<?php echo esc_attr(\WPSMM\Plugin::checkIntervalMinutes()); ?>"><em>phút</em></span></label>
+                    <label class="wpsmm-setting-field"><span>Số website mỗi nhóm</span><small>Giới hạn số website được gọi trong mỗi lần chạy định kỳ để tránh tạo tải lớn đột ngột.</small><span class="wpsmm-input-unit"><input type="number" min="1" max="100" name="wpsmm_batch_size" value="<?php echo esc_attr(get_option('wpsmm_batch_size', 10)); ?>"><em>website</em></span></label>
+                    <label class="wpsmm-setting-field"><span>Số ngày lưu nhật ký</span><small>Số ngày hệ thống lưu trữ nhật ký giám sát.</small><span class="wpsmm-input-unit"><input type="number" min="1" name="wpsmm_log_retention_days" value="<?php echo esc_attr(get_option('wpsmm_log_retention_days', 7)); ?>"><em>ngày</em></span></label>
+                    <label class="wpsmm-setting-field"><span>Thời gian chờ</span><small>Thời gian tối đa chờ phản hồi của website.</small><span class="wpsmm-input-unit"><input type="number" min="5" name="wpsmm_timeout" value="<?php echo esc_attr(get_option('wpsmm_timeout', 15)); ?>"><em>giây</em></span></label>
                     <div class="wpsmm-settings-inline">
                         <label class="wpsmm-setting-field"><span>Ngưỡng lỗi liên tiếp</span><small>Số lần lỗi trước khi cảnh báo.</small><span class="wpsmm-input-unit"><input type="number" min="1" name="wpsmm_error_threshold" value="<?php echo esc_attr(get_option('wpsmm_error_threshold', 2)); ?>"><em>lần</em></span></label>
                         <label class="wpsmm-setting-field"><span>Ngày cảnh báo SSL</span><small>Cảnh báo trước khi SSL hết hạn.</small><span class="wpsmm-input-unit"><input type="number" min="1" name="wpsmm_ssl_warning_days" value="<?php echo esc_attr(get_option('wpsmm_ssl_warning_days', 14)); ?>"><em>ngày</em></span></label>
@@ -63,12 +65,12 @@ $telegram_enabled = (bool) get_option('wpsmm_enable_telegram_alert', $telegram_c
                         <label class="wpsmm-setting-field"><span>Email nhận thông báo</span><input type="email" name="wpsmm_alert_email" value="<?php echo esc_attr(get_option('wpsmm_alert_email')); ?>" placeholder="admin@example.com"></label>
                     </div>
                     <div class="wpsmm-channel">
-                        <div class="wpsmm-channel-heading"><span class="wpsmm-channel-icon is-zalo">Zalo</span><div><strong>Zalo</strong><small>Nhận thông báo qua Zalo webhook.</small></div><label class="wpsmm-channel-switch"><input type="checkbox" name="wpsmm_enable_zalo_alert" value="1" <?php checked(get_option('wpsmm_enable_zalo_alert')); ?>><i></i></label></div>
-                        <label class="wpsmm-setting-field"><span>Webhook URL</span><?php wpsmm_secret_input('wpsmm_zalo_webhook_url', get_option('wpsmm_zalo_webhook_url'), 'https://example.zalo.me/webhook/...'); ?></label>
+                        <div class="wpsmm-channel-heading"><span class="wpsmm-channel-icon is-zalo">Zalo</span><div><strong>Zalo</strong><small>Nhận thông báo qua webhook Zalo.</small></div><label class="wpsmm-channel-switch"><input type="checkbox" name="wpsmm_enable_zalo_alert" value="1" <?php checked(get_option('wpsmm_enable_zalo_alert')); ?>><i></i></label></div>
+                        <label class="wpsmm-setting-field"><span>URL webhook</span><?php wpsmm_secret_input('wpsmm_zalo_webhook_url', get_option('wpsmm_zalo_webhook_url'), 'https://example.zalo.me/webhook/...'); ?></label>
                     </div>
                     <div class="wpsmm-channel">
-                        <div class="wpsmm-channel-heading"><span class="wpsmm-channel-icon is-telegram"><span class="dashicons dashicons-location-alt"></span></span><div><strong>Telegram</strong><small>Nhận thông báo qua Telegram bot.</small></div><label class="wpsmm-channel-switch"><input type="checkbox" name="wpsmm_enable_telegram_alert" value="1" <?php checked($telegram_enabled); ?>><i></i></label></div>
-                        <div class="wpsmm-settings-inline">
+                        <div class="wpsmm-channel-heading"><span class="wpsmm-channel-icon is-telegram"><span class="dashicons dashicons-location-alt"></span></span><div><strong>Telegram</strong><small>Nhận thông báo qua bot Telegram.</small></div><label class="wpsmm-channel-switch"><input type="checkbox" name="wpsmm_enable_telegram_alert" value="1" <?php checked($telegram_enabled); ?>><i></i></label></div>
+                        <div class="wpsmm-settings-inline wpsmm-telegram-fields">
                             <label class="wpsmm-setting-field"><span>Mã bot</span><?php wpsmm_secret_input('wpsmm_telegram_bot_token', get_option('wpsmm_telegram_bot_token'), '123456789:AAE...'); ?></label>
                             <label class="wpsmm-setting-field"><span>ID cuộc trò chuyện</span><input name="wpsmm_telegram_chat_id" value="<?php echo esc_attr(get_option('wpsmm_telegram_chat_id')); ?>" placeholder="-1001234567890"></label>
                         </div>
@@ -76,7 +78,7 @@ $telegram_enabled = (bool) get_option('wpsmm_enable_telegram_alert', $telegram_c
                 </section>
                 <section class="wpsmm-settings-card" id="wpsmm-settings-integration">
                     <div class="wpsmm-settings-card-heading"><h2>Tích hợp thời gian thực</h2><p>Bảng điều khiển dùng WebSocket nếu được cấu hình và tự động chuyển sang truy vấn REST định kỳ khi cần.</p></div>
-                    <label class="wpsmm-setting-field"><span>WebSocket URL</span><input name="wpsmm_websocket_url" value="<?php echo esc_attr(get_option('wpsmm_websocket_url')); ?>" placeholder="wss://monitor.example.com/ws"></label>
+                    <label class="wpsmm-setting-field"><span>URL WebSocket</span><input name="wpsmm_websocket_url" value="<?php echo esc_attr(get_option('wpsmm_websocket_url')); ?>" placeholder="wss://monitor.example.com/ws"></label>
                 </section>
                 <section class="wpsmm-settings-card">
                     <div class="wpsmm-settings-card-heading"><h2>Tùy chọn quản trị</h2><p>Điều chỉnh các thành phần hiển thị trong khu vực quản trị WordPress.</p></div>
