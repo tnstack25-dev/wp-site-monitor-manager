@@ -1,5 +1,4 @@
 WP Site Monitor Manager
-Phiên bản: 2.1.1
 
 Tính năng chính:
 - Giám sát thời gian hoạt động, trạng thái HTTP, SSL, tiêu đề và từ khóa của website
