@@ -20,7 +20,6 @@ $incidents = $incidents ?? [];
             <button class="button wpsmm-check-site" data-id="<?php echo esc_attr($site->id); ?>"><span class="dashicons dashicons-update"></span>Kiểm tra ngay</button>
             <a class="button button-primary" href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-sites&id=' . $site->id)); ?>"><span class="dashicons dashicons-edit"></span>Chỉnh sửa</a>
             <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-sites')); ?>"><span class="dashicons dashicons-list-view"></span>Danh sách</a>
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-sites&action=new')); ?>"><span class="dashicons dashicons-plus-alt2"></span>Thêm website</a>
         </div>
     </header>
     <nav class="wpsmm-detail-tabs"><a href="#wpsmm-detail-overview">Tổng quan</a><a href="#wpsmm-detail-technical">Kỹ thuật</a><a href="#wpsmm-detail-login">Đăng nhập</a><a href="#wpsmm-detail-extensions">Plugin và giao diện</a><a href="#wpsmm-detail-logs">Lịch sử sự cố</a></nav>

@@ -9,11 +9,7 @@ $check_interval_minutes = \WPSMM\Plugin::checkIntervalMinutes();
     <header class="wpsmm-list-header">
         <div><h1><?php echo $edit ? 'Cập nhật website' : 'Thêm website mới'; ?></h1><p><?php echo $edit ? 'Điều chỉnh thông tin, điều kiện giám sát và tài khoản quản trị.' : 'Thêm website để bắt đầu giám sát và theo dõi trạng thái hoạt động.'; ?></p></div>
         <div class="wpsmm-toolbar-actions">
-            <?php if ($edit): ?>
-                <a class="button button-primary wpsmm-primary-action" href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-sites&action=new')); ?>"><span class="dashicons dashicons-plus-alt2"></span>Thêm website</a>
-            <?php else: ?>
-                <button type="submit" form="wpsmm-site-editor" class="button button-primary wpsmm-primary-action"><span class="dashicons dashicons-saved"></span>Thêm website</button>
-            <?php endif; ?>
+            <a class="button button-primary wpsmm-primary-action" href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-sites&action=new')); ?>"><span class="dashicons dashicons-plus-alt2"></span>Thêm website</a>
             <a class="button wpsmm-guide-button" href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-sites')); ?>"><span class="dashicons dashicons-list-view"></span>Danh sách website</a>
         </div>
     </header>
