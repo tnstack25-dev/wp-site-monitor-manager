@@ -11,7 +11,6 @@
 if (!defined('ABSPATH')) {
     exit;
 }
-
 define('WPSMM_VERSION', '2.2.0');
 define('WPSMM_PLUGIN_FILE', __FILE__);
 define('WPSMM_PLUGIN_DIR', plugin_dir_path(__FILE__));
