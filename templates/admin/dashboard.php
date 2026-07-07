@@ -43,6 +43,20 @@ if (!defined('ABSPATH')) {
                 <div class="wpsmm-status-legend" id="wpsmm-status-legend"></div>
             </div>
         </article>
+        <article class="wpsmm-panel wpsmm-sla-panel">
+            <header class="wpsmm-panel-head">
+                <div>
+                    <h2>SLA tổng hợp</h2>
+                    <p>Uptime và thời gian khôi phục trung bình</p>
+                </div>
+            </header>
+            <div class="wpsmm-sla-grid" id="wpsmm-sla-panel">
+                <article><small>Uptime 7 ngày</small><strong>-</strong></article>
+                <article><small>Uptime 30 ngày</small><strong>-</strong></article>
+                <article><small>Uptime 90 ngày</small><strong>-</strong></article>
+                <article><small>MTTR (30 ngày)</small><strong>-</strong></article>
+            </div>
+        </article>
         <article class="wpsmm-panel wpsmm-incidents-panel">
             <header class="wpsmm-panel-head">
                 <div>
@@ -90,8 +104,17 @@ if (!defined('ABSPATH')) {
                 </tbody>
             </table>
         </div>
-        <footer class="wpsmm-table-footer"><span id="wpsmm-table-count">0 website</span>
+        <footer class="wpsmm-table-footer">
+            <span id="wpsmm-table-count">0 website</span>
             <div class="wpsmm-pagination" id="wpsmm-site-pagination"></div>
+            <label class="wpsmm-per-page">
+                <select id="wpsmm-site-per-page" aria-label="Số website mỗi trang">
+                    <option value="10">10 / trang</option>
+                    <option value="20" selected>20 / trang</option>
+                    <option value="50">50 / trang</option>
+                    <option value="100">100 / trang</option>
+                </select>
+            </label>
         </footer>
     </section>
 </div>

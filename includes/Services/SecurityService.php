@@ -129,6 +129,51 @@ final class SecurityService
         return false;
     }
 
+    public static function verifyAgentSignature(\WP_REST_Request $request, string $secret)
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', $secret)) {
+            return new \WP_Error('wpsmm_signature_invalid', 'Khóa Agent không hợp lệ.', ['status' => 403]);
+        }
+        $rateKey = 'wpsmm_signature_rate_' . md5(self::requestIp());
+        $attempts = (int) get_transient($rateKey);
+        if ($attempts >= 10) {
+            return new \WP_Error('wpsmm_signature_rate_limit', 'Có quá nhiều yêu cầu không hợp lệ.', ['status' => 429]);
+        }
+        if (strlen($request->get_body()) > 8192) {
+            return new \WP_Error('wpsmm_request_too_large', 'Dữ liệu yêu cầu vượt quá giới hạn.', ['status' => 413]);
+        }
+
+        $timestamp = (string) $request->get_header('x-wpma-timestamp');
+        $nonce = strtolower((string) $request->get_header('x-wpma-nonce'));
+        $signature = strtolower((string) $request->get_header('x-wpma-signature'));
+        if (!ctype_digit($timestamp) || abs(time() - (int) $timestamp) > 120 || !preg_match('/^[a-f0-9]{32}$/', $nonce) || !preg_match('/^[a-f0-9]{64}$/', $signature)) {
+            set_transient($rateKey, $attempts + 1, 5 * MINUTE_IN_SECONDS);
+            return new \WP_Error('wpsmm_signature_invalid', 'Chữ ký yêu cầu không hợp lệ.', ['status' => 403]);
+        }
+
+        $nonceKey = 'wpsmm_nonce_' . hash('sha256', $nonce);
+        if (get_transient($nonceKey)) {
+            set_transient($rateKey, $attempts + 1, 5 * MINUTE_IN_SECONDS);
+            return new \WP_Error('wpsmm_signature_replay', 'Yêu cầu đã được sử dụng.', ['status' => 403]);
+        }
+
+        $canonical = $timestamp . "\n" . $nonce . "\n" . $request->get_route() . "\n" . hash('sha256', $request->get_body());
+        $expected = hash_hmac('sha256', $canonical, $secret);
+        if (!hash_equals($expected, $signature)) {
+            set_transient($rateKey, $attempts + 1, 5 * MINUTE_IN_SECONDS);
+            return new \WP_Error('wpsmm_signature_invalid', 'Chữ ký yêu cầu không hợp lệ.', ['status' => 403]);
+        }
+
+        set_transient($nonceKey, 1, 5 * MINUTE_IN_SECONDS);
+        delete_transient($rateKey);
+        return true;
+    }
+
+    private static function requestIp(): string
+    {
+        return isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : 'unknown';
+    }
+
     private static function secretKey(): string
     {
         $material = (defined('AUTH_KEY') ? AUTH_KEY : '') . (defined('SECURE_AUTH_KEY') ? SECURE_AUTH_KEY : '') . (defined('LOGGED_IN_KEY') ? LOGGED_IN_KEY : '');

@@ -4,6 +4,7 @@ namespace WPSMM;
 use WPSMM\Admin\AdminController;
 use WPSMM\Rest\ApiController;
 use WPSMM\Services\DatabaseService;
+use WPSMM\Services\DnsMonitorService;
 use WPSMM\Services\GitHubUpdateService;
 use WPSMM\Services\MonitorService;
 
@@ -15,6 +16,7 @@ final class Plugin
 {
     public const CHECK_CRON = 'wpsmm_monitor_check_event';
     public const LOG_CLEAN_CRON = 'wpsmm_log_clean_event';
+    public const DNS_CRON = 'wpsmm_dns_check_event';
     private const CHECK_SCHEDULE = 'wpsmm_monitor_interval';
     private const DEFAULT_CHECK_INTERVAL = 120;
     private const MIN_CHECK_INTERVAL = 60;
@@ -43,6 +45,7 @@ final class Plugin
         add_action('admin_init', [$this, 'maybeUpgrade']);
         add_action(self::CHECK_CRON, [MonitorService::class, 'checkAll']);
         add_action(self::LOG_CLEAN_CRON, [MonitorService::class, 'cleanupOldLogs']);
+        add_action(self::DNS_CRON, [DnsMonitorService::class, 'checkAll']);
         GitHubUpdateService::register();
         $this->admin = new AdminController();
         $this->admin->register();
@@ -91,6 +94,7 @@ final class Plugin
     {
         wp_clear_scheduled_hook(self::CHECK_CRON);
         wp_clear_scheduled_hook(self::LOG_CLEAN_CRON);
+        wp_clear_scheduled_hook(self::DNS_CRON);
         $this->clearRemovedFeatureCrons();
     }
 
@@ -130,6 +134,9 @@ final class Plugin
         $this->scheduleCheckCron();
         if (!wp_next_scheduled(self::LOG_CLEAN_CRON)) {
             wp_schedule_event(time() + 3600, 'daily', self::LOG_CLEAN_CRON);
+        }
+        if (!wp_next_scheduled(self::DNS_CRON)) {
+            wp_schedule_event(time() + 7200, 'daily', self::DNS_CRON);
         }
     }
 

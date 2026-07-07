@@ -1,10 +1,12 @@
 <?php
 namespace WPSMM\Admin;
 
+use WPSMM\Repositories\GroupRepository;
 use WPSMM\Repositories\SiteRepository;
 use WPSMM\Services\DatabaseService;
 use WPSMM\Services\GitHubUpdateService;
 use WPSMM\Services\MonitorService;
+use WPSMM\Services\PublicSiteService;
 use WPSMM\Services\SecurityService;
 
 if (!defined('ABSPATH')) {
@@ -21,6 +23,8 @@ final class AdminController
         add_action('admin_post_wpsmm_save_site', [$this, 'saveSite']);
         add_action('admin_post_wpsmm_delete_site', [$this, 'deleteSite']);
         add_action('admin_post_wpsmm_bulk_sites', [$this, 'bulkSites']);
+        add_action('admin_post_wpsmm_save_group', [$this, 'saveGroup']);
+        add_action('admin_post_wpsmm_delete_group', [$this, 'deleteGroup']);
         add_action('admin_post_wpsmm_quick_login', [$this, 'quickLogin']);
         add_action('admin_post_wpsmm_reveal_credentials', [$this, 'revealCredentials']);
         add_action('admin_post_wpsmm_update_site_credentials', [$this, 'updateSiteCredentials']);
@@ -34,6 +38,7 @@ final class AdminController
         add_menu_page('WP Site Monitor', 'WP Site Monitor', 'manage_options', 'wpsmm', [$this, 'dashboard'], 'dashicons-chart-area', 58);
         add_submenu_page('wpsmm', 'Tổng quan', 'Tổng quan', 'manage_options', 'wpsmm', [$this, 'dashboard']);
         add_submenu_page('wpsmm', 'Website', 'Website', 'manage_options', 'wpsmm-sites', [$this, 'sites']);
+        add_submenu_page('wpsmm', 'Nhóm website', 'Nhóm website', 'manage_options', 'wpsmm-groups', [$this, 'groups']);
         add_submenu_page('wpsmm', 'Nhật ký', 'Nhật ký', 'manage_options', 'wpsmm-logs', [$this, 'logs']);
         add_submenu_page('wpsmm', 'Cài đặt', 'Cài đặt', 'manage_options', 'wpsmm-settings', [$this, 'settings']);
     }
@@ -93,10 +98,45 @@ final class AdminController
             return;
         }
         if ($edit || $action === 'new') {
-            $this->render('site-form', ['edit' => $edit]);
+            $this->render('site-form', ['edit' => $edit, 'groups' => GroupRepository::all(false)]);
             return;
         }
-        $this->render('sites', ['sites' => SiteRepository::all()]);
+        $page = max(1, (int) ($_GET['paged'] ?? 1));
+        $per = min(100, max(5, (int) ($_GET['per_page'] ?? 20)));
+        $filter = sanitize_key(wp_unslash($_GET['filter'] ?? 'all'));
+        $search = sanitize_text_field(wp_unslash($_GET['search'] ?? ''));
+        $groupId = isset($_GET['group_id']) ? (int) $_GET['group_id'] : 0;
+        $listing = SiteRepository::paginate([
+            'page' => $page,
+            'per_page' => $per,
+            'filter' => $filter,
+            'search' => $search,
+            'group_id' => $groupId,
+        ]);
+        $this->render('sites', [
+            'sites' => $listing['items'],
+            'summary' => SiteRepository::summaryCounts(),
+            'counts' => SiteRepository::filterCounts(),
+            'groups' => GroupRepository::all(),
+            'group_id' => $groupId,
+            'page' => $listing['page'],
+            'per' => $listing['per_page'],
+            'pages' => $listing['pages'],
+            'total' => $listing['total'],
+            'filter' => $filter,
+            'search' => $search,
+        ]);
+    }
+
+    public function groups(): void
+    {
+        $editId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+        $edit = $editId > 0 ? GroupRepository::find($editId) : null;
+        $this->render('groups', [
+            'groups' => GroupRepository::all(),
+            'edit' => $edit,
+            'ungrouped_count' => GroupRepository::ungroupedCount(),
+        ]);
     }
 
     public function logs(): void
@@ -176,7 +216,7 @@ final class AdminController
         $data = [
             'name' => sanitize_text_field(wp_unslash($_POST['name'] ?? '')),
             'url' => SecurityService::publicHttpUrl($url),
-            'group_name' => sanitize_text_field(wp_unslash($_POST['group_name'] ?? '')),
+            'group_id' => absint($_POST['group_id'] ?? 0),
             'monitor_enabled' => !empty($_POST['monitor_enabled']) ? 1 : 0,
             'health_path' => sanitize_text_field(wp_unslash($_POST['health_path'] ?? '')),
             'expected_status' => absint($_POST['expected_status'] ?? 200) ?: 200,
@@ -215,6 +255,7 @@ final class AdminController
             $this->notice('error', 'URL đăng nhập không hợp lệ.');
             $this->redirect('wpsmm-sites');
         }
+        $data = SiteRepository::applyGroupSelection($data);
         $savedId = SiteRepository::save($data, $id);
         delete_transient('wpsmm_inventory_' . $savedId);
         if ($id <= 0 && !empty($data['monitor_enabled'])) {
@@ -244,19 +285,68 @@ final class AdminController
         check_admin_referer('wpsmm_bulk_sites');
         $ids = array_values(array_filter(array_map('absint', (array) ($_POST['site_ids'] ?? []))));
         $action = sanitize_key(wp_unslash($_POST['bulk_action'] ?? ''));
-        foreach ($ids as $id) {
-            if ($action === 'pause') {
-                SiteRepository::save(['monitor_enabled' => 0], $id);
-            } elseif ($action === 'resume') {
-                SiteRepository::save(['monitor_enabled' => 1], $id);
-            } elseif ($action === 'check') {
-                MonitorService::check($id, true);
-            } elseif ($action === 'delete') {
-                SiteRepository::delete($id);
+        if ($action === '' || !$ids) {
+            $this->notice('error', 'Vui lòng chọn ít nhất một website và thao tác hàng loạt.');
+            $this->redirect('wpsmm-sites');
+        }
+        if ($action === 'check') {
+            MonitorService::checkBatch($ids, true);
+        } elseif ($action === 'assign_group') {
+            $groupId = absint($_POST['bulk_group_id'] ?? 0);
+            if ($groupId > 0 && !GroupRepository::find($groupId)) {
+                $this->notice('error', 'Nhóm website không tồn tại.');
+                $this->redirect('wpsmm-sites');
+            }
+            GroupRepository::assignSites($groupId, $ids);
+        } else {
+            foreach ($ids as $id) {
+                if ($action === 'pause') {
+                    SiteRepository::save(['monitor_enabled' => 0], $id);
+                } elseif ($action === 'resume') {
+                    SiteRepository::save(['monitor_enabled' => 1], $id);
+                } elseif ($action === 'delete') {
+                    SiteRepository::delete($id);
+                }
             }
         }
         $this->notice('success', 'Đã xử lý thao tác hàng loạt cho ' . count($ids) . ' website.');
         $this->redirect('wpsmm-sites');
+    }
+
+    public function saveGroup(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die();
+        }
+        check_admin_referer('wpsmm_save_group');
+        $id = (int) ($_POST['id'] ?? 0);
+        $savedId = GroupRepository::save([
+            'name' => wp_unslash($_POST['name'] ?? ''),
+            'description' => wp_unslash($_POST['description'] ?? ''),
+            'color' => wp_unslash($_POST['color'] ?? '#5b7cfa'),
+            'sort_order' => (int) ($_POST['sort_order'] ?? 0),
+        ], $id);
+        if ($savedId <= 0) {
+            $this->notice('error', 'Tên nhóm không hợp lệ.');
+            $this->redirect('wpsmm-groups');
+        }
+        $this->notice('success', $id > 0 ? 'Đã cập nhật nhóm website.' : 'Đã tạo nhóm website mới.');
+        $this->redirect('wpsmm-groups');
+    }
+
+    public function deleteGroup(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die();
+        }
+        $id = (int) ($_GET['id'] ?? 0);
+        check_admin_referer('wpsmm_delete_group_' . $id);
+        if (!GroupRepository::delete($id)) {
+            $this->notice('error', 'Không thể xóa nhóm website.');
+            $this->redirect('wpsmm-groups');
+        }
+        $this->notice('success', 'Đã xóa nhóm website. Các website trong nhóm đã được chuyển về chưa phân nhóm.');
+        $this->redirect('wpsmm-groups');
     }
 
     public function quickLogin(): void
@@ -404,11 +494,21 @@ final class AdminController
         }
         $ws = SecurityService::publicUrl((string) wp_unslash($_POST['wpsmm_websocket_url'] ?? ''), ['wss']);
         update_option('wpsmm_websocket_url', $ws);
-        foreach (['wpsmm_dark_mode', 'wpsmm_enable_email_alert', 'wpsmm_enable_zalo_alert', 'wpsmm_enable_telegram_alert', 'wpsmm_hide_tgmpa_notice'] as $key) {
+        foreach (['wpsmm_dark_mode', 'wpsmm_enable_email_alert', 'wpsmm_enable_zalo_alert', 'wpsmm_enable_telegram_alert', 'wpsmm_hide_tgmpa_notice', 'wpsmm_dns_monitor_enabled', 'wpsmm_dns_alert_enabled', 'wpsmm_enable_recovery_alert'] as $key) {
             update_option($key, !empty($_POST[$key]) ? 1 : 0);
         }
+        update_option('wpsmm_alert_cooldown_p1', max(300, absint($_POST['wpsmm_alert_cooldown_p1'] ?? 900)));
+        update_option('wpsmm_alert_cooldown_p2', max(600, absint($_POST['wpsmm_alert_cooldown_p2'] ?? 1800)));
+        update_option('wpsmm_alert_cooldown_p3', max(900, absint($_POST['wpsmm_alert_cooldown_p3'] ?? 3600)));
+        update_option('wpsmm_alert_cooldown_recovery', max(300, absint($_POST['wpsmm_alert_cooldown_recovery'] ?? 1800)));
         update_option('wpsmm_log_retention_days', max(1, absint($_POST['wpsmm_log_retention_days'] ?? 7)));
-        update_option('wpsmm_batch_size', max(1, min(100, absint($_POST['wpsmm_batch_size'] ?? 10))));
+        update_option('wpsmm_batch_size', max(1, min(MonitorService::MAX_BATCH_SIZE, absint($_POST['wpsmm_batch_size'] ?? 10))));
+        update_option('wpsmm_batch_time_budget', max(30, min(600, absint($_POST['wpsmm_batch_time_budget'] ?? 240))));
+        update_option('wpsmm_batch_concurrency', max(10, min(80, absint($_POST['wpsmm_batch_concurrency'] ?? 30))));
+        update_option('wpsmm_batch_max_ssl_checks', max(1, min(100, absint($_POST['wpsmm_batch_max_ssl_checks'] ?? 25))));
+        update_option('wpsmm_homepage_body_limit', max(16384, min(524288, absint($_POST['wpsmm_homepage_body_limit'] ?? 131072))));
+        update_option('wpsmm_multi_probe_enabled', !empty($_POST['wpsmm_multi_probe_enabled']) ? 1 : 0);
+        update_option('wpsmm_min_probes_required', max(1, min(3, absint($_POST['wpsmm_min_probes_required'] ?? 2))));
         $checkInterval = min(DAY_IN_SECONDS, max(MINUTE_IN_SECONDS, absint($_POST['wpsmm_check_interval_minutes'] ?? 2) * MINUTE_IN_SECONDS));
         if ($checkInterval !== (int) get_option('wpsmm_check_interval', 120)) {
             update_option('wpsmm_check_interval', $checkInterval);
@@ -480,25 +580,83 @@ final class AdminController
         if (!$refresh && ($cached = get_transient($cacheKey)) && is_array($cached)) {
             return $cached;
         }
-        if (empty($site->agent_secret)) {
-            return ['success' => false, 'message' => 'Cần cấu hình khóa kết nối Agent để tải thông tin kỹ thuật.'];
+
+        $result = null;
+        if (!empty($site->agent_secret)) {
+            $endpoint = SecurityService::publicLoginUrl(untrailingslashit((string) $site->url) . '/wp-json/wpma/v1/inventory');
+            if ($endpoint) {
+                $response = $this->signedAgentPost($site, $endpoint, '/wpma/v1/inventory', ['refresh' => $refresh]);
+                if (!is_wp_error($response)) {
+                    $payload = json_decode((string) wp_remote_retrieve_body($response), true);
+                    if (wp_remote_retrieve_response_code($response) === 200 && !empty($payload['success']) && is_array($payload['inventory'] ?? null)) {
+                        $result = [
+                            'success' => true,
+                            'data' => PublicSiteService::enrichInventory((string) $site->url, $payload['inventory']),
+                            'source' => 'agent',
+                        ];
+                    }
+                }
+            }
         }
 
-        $endpoint = SecurityService::publicLoginUrl(untrailingslashit((string) $site->url) . '/wp-json/wpma/v1/inventory');
-        if (!$endpoint) {
-            return ['success' => false, 'message' => 'URL website con không hợp lệ hoặc chưa sử dụng HTTPS.'];
+        if (!$result) {
+            $public = $this->buildPublicInventory((string) $site->url);
+            if (!empty($public['success'])) {
+                $public['message'] = empty($site->agent_secret)
+                    ? 'Đang hiển thị thông tin public qua REST API WordPress. Cấu hình khóa Agent để xem plugin và giao diện.'
+                    : 'Không kết nối được Agent. Đang hiển thị thông tin public qua REST API WordPress.';
+                $result = $public;
+            } else {
+                return [
+                    'success' => false,
+                    'message' => empty($site->agent_secret)
+                        ? 'Cần cấu hình khóa Agent hoặc bật REST API public trên website con.'
+                        : 'Không thể kết nối Agent và không tải được REST API public của website con.',
+                ];
+            }
         }
-        $response = $this->signedAgentPost($site, $endpoint, '/wpma/v1/inventory', ['refresh' => $refresh]);
-        if (is_wp_error($response)) {
-            return ['success' => false, 'message' => 'Không thể kết nối với WP Site Monitor Agent trên website con.'];
-        }
-        $payload = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (wp_remote_retrieve_response_code($response) !== 200 || empty($payload['success']) || !is_array($payload['inventory'] ?? null)) {
-            return ['success' => false, 'message' => (string) ($payload['message'] ?? 'Agent chưa hỗ trợ tải thông tin plugin và giao diện.')];
-        }
-        $result = ['success' => true, 'data' => $payload['inventory']];
+
         set_transient($cacheKey, $result, 5 * MINUTE_IN_SECONDS);
         return $result;
+    }
+
+    private function buildPublicInventory(string $url): array
+    {
+        $profile = PublicSiteService::fetchPublicProfile($url);
+        if (empty($profile['available'])) {
+            return ['success' => false];
+        }
+
+        $site = is_array($profile['site'] ?? null) ? $profile['site'] : [];
+        $content = is_array($profile['content'] ?? null) ? $profile['content'] : [];
+        $network = is_array($profile['network'] ?? null) ? $profile['network'] : [];
+
+        return [
+            'success' => true,
+            'source' => 'wp_rest',
+            'data' => [
+                'generated_at' => current_time('mysql'),
+                'wordpress' => '',
+                'php' => '',
+                'database' => '',
+                'server' => '',
+                'public_site' => [
+                    'name' => (string) ($site['name'] ?? ''),
+                    'description' => (string) ($site['description'] ?? ''),
+                    'url' => (string) ($site['home'] ?? $site['url'] ?? ''),
+                    'timezone' => (string) ($site['timezone_string'] ?? ''),
+                    'language' => '',
+                    'users' => null,
+                ],
+                'content' => $content,
+                'network' => array_merge($network, [
+                    'dns_ips' => PublicSiteService::resolveHostIps($url),
+                    'public_ips' => PublicSiteService::resolveHostIps($url),
+                ]),
+                'plugins' => [],
+                'themes' => [],
+            ],
+        ];
     }
 
     private function signedAgentPost(object $site, string $endpoint, string $route, array $payload)
@@ -527,6 +685,7 @@ final class AdminController
                 'X-WPMA-Timestamp' => $timestamp,
                 'X-WPMA-Nonce' => $nonce,
                 'X-WPMA-Signature' => hash_hmac('sha256', $canonical, $secret),
+                'X-WPMA-Manager-URL' => untrailingslashit(home_url()),
             ],
             'body' => $body,
         ];
