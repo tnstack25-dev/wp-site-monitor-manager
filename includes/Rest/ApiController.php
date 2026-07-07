@@ -4,6 +4,7 @@ namespace WPSMM\Rest;
 use WP_REST_Request;
 use WPSMM\Repositories\SiteRepository;
 use WPSMM\Services\DatabaseService;
+use WPSMM\Services\HeartbeatService;
 use WPSMM\Services\MonitorService;
 use WPSMM\Services\SecurityService;
 
@@ -27,6 +28,7 @@ final class ApiController
         register_rest_route('wpsmm/v1', '/chart', ['methods' => 'GET', 'callback' => [$this, 'chart'], 'permission_callback' => $perm]);
         register_rest_route('wpsmm/v1', '/check/(?P<id>\d+)', ['methods' => 'POST', 'callback' => [$this, 'check'], 'permission_callback' => $perm]);
         register_rest_route('wpsmm/v1', '/settings/dark-mode', ['methods' => 'POST', 'callback' => [$this, 'darkMode'], 'permission_callback' => $perm]);
+        register_rest_route('wpsmm/v1', '/heartbeat', ['methods' => 'POST', 'callback' => [$this, 'heartbeat'], 'permission_callback' => '__return_true']);
     }
 
     public function permission(): bool
@@ -39,9 +41,26 @@ final class ApiController
         return MonitorService::stats();
     }
 
-    public function sites(): array
+    public function sites(WP_REST_Request $request): array
     {
-        return array_map([SecurityService::class, 'redactObject'], SiteRepository::all());
+        $result = SiteRepository::paginate([
+            'page' => (int) $request->get_param('page'),
+            'per_page' => (int) $request->get_param('per_page'),
+            'filter' => (string) ($request->get_param('filter') ?: 'all'),
+            'search' => (string) ($request->get_param('search') ?: ''),
+            'group_id' => (int) ($request->get_param('group_id') ?: 0),
+        ]);
+        return [
+            'items' => array_map([SecurityService::class, 'redactObject'], $result['items']),
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'per_page' => $result['per_page'],
+            'pages' => $result['pages'],
+            'filter' => $result['filter'],
+            'search' => $result['search'],
+            'group_id' => $result['group_id'],
+            'counts' => SiteRepository::filterCounts(),
+        ];
     }
 
     public function logs(WP_REST_Request $request): array
@@ -68,5 +87,10 @@ final class ApiController
         $enabled = (bool) $request->get_param('enabled');
         update_option('wpsmm_dark_mode', $enabled ? 1 : 0);
         return ['success' => true, 'enabled' => $enabled];
+    }
+
+    public function heartbeat(WP_REST_Request $request)
+    {
+        return HeartbeatService::receive($request);
     }
 }

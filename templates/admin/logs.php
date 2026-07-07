@@ -11,7 +11,7 @@ $paginationPages = $pages <= 7 ? range(1, $pages) : array_values(array_unique(ar
     return $item >= 1 && $item <= $pages;
 })));
 sort($paginationPages);
-$statusLabels = ['online' => 'Thành công', 'redirect' => 'Chuyển hướng', 'offline' => 'Mất kết nối', 'server_error' => 'HTTP 5xx', 'client_error' => 'HTTP 4xx', 'not_found' => 'HTTP 404', 'title_changed' => 'Tiêu đề thay đổi', 'suspicious' => 'Cảnh báo nội dung', 'ssl_expiring' => 'SSL sắp hết hạn', 'ssl_error' => 'SSL lỗi', 'unknown' => 'Chưa xác định'];
+$statusLabels = ['online' => 'Thành công', 'redirect' => 'Chuyển hướng', 'partial' => 'Hoạt động một phần', 'offline' => 'Mất kết nối', 'server_error' => 'HTTP 5xx', 'client_error' => 'HTTP 4xx', 'not_found' => 'HTTP 404', 'title_changed' => 'Tiêu đề thay đổi', 'suspicious' => 'Cảnh báo nội dung', 'ssl_expiring' => 'SSL sắp hết hạn', 'ssl_error' => 'SSL lỗi', 'unknown' => 'Chưa xác định'];
 ?>
 <div class="wrap wpsmm-wrap wpsmm-logs-page">
     <header class="wpsmm-list-header">

@@ -3,6 +3,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 $edit = $edit ?? null;
+$groups = $groups ?? [];
+$selectedGroupId = (int) ($edit->group_id ?? 0);
 $check_interval_minutes = \WPSMM\Plugin::checkIntervalMinutes();
 ?>
 <div class="wrap wpsmm-wrap wpsmm-site-form-page">
@@ -23,7 +25,14 @@ $check_interval_minutes = \WPSMM\Plugin::checkIntervalMinutes();
                 <h2>Thông tin website</h2>
                 <label>Tên website <b>*</b><small>Tên hiển thị để dễ dàng nhận biết website này.</small><input name="name" id="wpsmm-site-name" maxlength="190" value="<?php echo esc_attr($edit->name ?? ''); ?>" placeholder="Ví dụ: Website công ty, Blog cá nhân..." required></label>
                 <label>URL website <b>*</b><small>Nhập đầy đủ URL bao gồm http:// hoặc https://. URL đã tồn tại trong danh sách sẽ không được thêm lại.</small><div class="wpsmm-input-icon"><span class="dashicons dashicons-admin-site-alt3"></span><input name="url" id="wpsmm-site-url" value="<?php echo esc_attr($edit->url ?? ''); ?>" placeholder="https://example.com" required></div></label>
-                <label>Nhóm<small>Phân loại website để dễ quản lý.</small><input name="group_name" id="wpsmm-site-group" value="<?php echo esc_attr($edit->group_name ?? ''); ?>" placeholder="Ví dụ: Khách hàng A, Website nội bộ"></label>
+                <label>Nhóm<small>Chọn nhóm đã tạo hoặc để trống nếu chưa cần phân loại. <a href="<?php echo esc_url(admin_url('admin.php?page=wpsmm-groups')); ?>">Quản lý nhóm</a></small>
+                    <select name="group_id" id="wpsmm-site-group">
+                        <option value="0" <?php selected($selectedGroupId, 0); ?>>Chưa phân nhóm</option>
+                        <?php foreach ($groups as $group): ?>
+                            <option value="<?php echo esc_attr($group->id); ?>" <?php selected($selectedGroupId, (int) $group->id); ?>><?php echo esc_html($group->name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
             </section>
 
             <section class="wpsmm-form-panel">
@@ -33,7 +42,7 @@ $check_interval_minutes = \WPSMM\Plugin::checkIntervalMinutes();
                     <button type="button" data-monitor-mode="advanced"><span class="dashicons dashicons-admin-settings"></span><strong>Tùy chỉnh</strong><small>Đặt mã HTTP và tiêu đề mong đợi.</small></button>
                 </div>
                 <div class="wpsmm-advanced-fields" id="wpsmm-advanced-fields">
-                    <label>Đường dẫn kiểm tra trạng thái<small>Để trống để kiểm tra trang chủ. Ví dụ: <code>/health</code> hoặc <code>/wp-json/</code>.</small><input name="health_path" value="<?php echo esc_attr($edit->health_path ?? ''); ?>" placeholder="/health"></label>
+                    <label>Đường dẫn kiểm tra trạng thái<small>Để trống để kiểm tra trang chủ. Khi bật kiểm tra song song, Manager còn tự kiểm tra <code>/wp-json/</code> và <code>/wp-json/wpma/v1/health</code>.</small><input name="health_path" value="<?php echo esc_attr($edit->health_path ?? ''); ?>" placeholder="/health"></label>
                     <label>Mã HTTP mong đợi<small>Mã HTTP được xem là website hoạt động bình thường.</small><input type="number" name="expected_status" min="100" max="599" value="<?php echo esc_attr($edit->expected_status ?? 200); ?>"></label>
                     <label>Tiêu đề mong đợi<small>Cảnh báo nếu tiêu đề website không còn chứa nội dung này.</small><input name="expected_title" value="<?php echo esc_attr($edit->expected_title ?? ''); ?>" placeholder="Để trống nếu không cần kiểm tra"></label>
                 </div>
@@ -60,7 +69,7 @@ $check_interval_minutes = \WPSMM\Plugin::checkIntervalMinutes();
                 <h2>Tóm tắt cấu hình</h2>
                 <p><span class="dashicons dashicons-format-aside"></span><b>Tên website</b><small id="wpsmm-summary-name"><?php echo esc_html($edit->name ?? 'Chưa nhập'); ?></small></p>
                 <p><span class="dashicons dashicons-admin-site-alt3"></span><b>URL website</b><small id="wpsmm-summary-url"><?php echo esc_html($edit->url ?? 'Chưa nhập'); ?></small></p>
-                <p><span class="dashicons dashicons-groups"></span><b>Nhóm</b><small id="wpsmm-summary-group"><?php echo esc_html($edit->group_name ?? 'Tất cả website'); ?></small></p>
+                <p><span class="dashicons dashicons-groups"></span><b>Nhóm</b><small id="wpsmm-summary-group"><?php echo esc_html($edit->group_label ?? 'Chưa phân nhóm'); ?></small></p>
                 <p><span class="dashicons dashicons-chart-line"></span><b>Giám sát</b><small id="wpsmm-summary-mode">Giám sát cơ bản</small></p>
                 <p><span class="dashicons dashicons-clock"></span><b>Tần suất kiểm tra</b><small><?php echo esc_html($check_interval_minutes); ?> phút/lần</small></p>
                 <div class="wpsmm-editor-note"><span class="dashicons dashicons-info-outline"></span><div><strong>Lưu ý</strong><small>Hệ thống bắt đầu giám sát theo lịch của plugin ngay sau khi lưu website.</small></div></div>
