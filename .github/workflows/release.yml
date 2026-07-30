@@ -22,8 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           SLUG="wp-site-monitor-manager"
-          VERSION="${GITHUB_REF_NAME#v}"
-          ZIP="${SLUG}-${VERSION}.zip"
+          ZIP="${SLUG}.zip"
           STAGE="$(mktemp -d)"
           mkdir -p "${STAGE}/${SLUG}"
           find . -mindepth 1 -maxdepth 1 \

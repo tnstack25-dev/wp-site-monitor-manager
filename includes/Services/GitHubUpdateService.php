@@ -165,7 +165,7 @@ final class GitHubUpdateService
 
         $slug = dirname(plugin_basename(WPSMM_PLUGIN_FILE));
         $version = self::normalizeVersion((string) ($release['tag_name'] ?? $release['name'] ?? ''));
-        foreach ([$slug . '-' . $version . '.zip', $slug . '.zip'] as $expected) {
+        foreach ([$slug . '.zip', $slug . '-' . $version . '.zip'] as $expected) {
             foreach ($assets as $asset) {
                 if (strtolower((string) ($asset['name'] ?? '')) === strtolower($expected)) {
                     return esc_url_raw((string) ($asset['browser_download_url'] ?? ''));

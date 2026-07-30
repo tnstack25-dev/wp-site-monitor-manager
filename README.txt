@@ -1,5 +1,5 @@
 ﻿WP Site Monitor Manager
-Version: 2.2.2
+Version: 2.2.3
 
 Main features:
 - Monitor uptime, HTTP status, SSL, page title, suspicious keywords, REST API, DNS, SLA, and Agent heartbeat.
@@ -16,8 +16,8 @@ Agent setup:
 
 Deployment:
 - Push code to GitHub.
-- Create and push a version tag such as v2.2.2.
-- The GitHub Actions workflow builds wp-site-monitor-manager-{version}.zip and attaches it to the GitHub Release.
+- Create and push a version tag such as v2.2.3.
+- The GitHub Actions workflow builds wp-site-monitor-manager.zip and attaches it to the GitHub Release.
 - Installed sites can then update directly inside wp-admin without uploading code again.
 
 Removed modules:
@@ -28,6 +28,9 @@ Removed modules:
 Existing legacy database tables or backup files are not automatically deleted during upgrades.
 
 == Changelog ==
+
+= 2.2.3 =
+- Release ZIP asset now uses the plugin slug only, without the version number in the file name.
 
 = 2.2.2 =
 - Trigger automated GitHub Actions release from the default branch.
