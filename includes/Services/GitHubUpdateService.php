@@ -152,15 +152,30 @@ final class GitHubUpdateService
     private static function packageUrl(array $release): string
     {
         $assetName = defined('WPSMM_GITHUB_ASSET_NAME') ? (string) WPSMM_GITHUB_ASSET_NAME : trim((string) get_option('wpsmm_github_asset_name', ''));
-        foreach ((array) ($release['assets'] ?? []) as $asset) {
+        $assets = (array) ($release['assets'] ?? []);
+        foreach ($assets as $asset) {
             $name = (string) ($asset['name'] ?? '');
-            if ($assetName !== '' && $name !== $assetName) {
-                continue;
+            if ($assetName !== '' && $name === $assetName) {
+                return esc_url_raw((string) ($asset['browser_download_url'] ?? ''));
             }
-            if ($assetName === '' && !preg_match('/\.zip$/i', $name)) {
-                continue;
+        }
+        if ($assetName !== '') {
+            return '';
+        }
+
+        $slug = dirname(plugin_basename(WPSMM_PLUGIN_FILE));
+        $version = self::normalizeVersion((string) ($release['tag_name'] ?? $release['name'] ?? ''));
+        foreach ([$slug . '-' . $version . '.zip', $slug . '.zip'] as $expected) {
+            foreach ($assets as $asset) {
+                if (strtolower((string) ($asset['name'] ?? '')) === strtolower($expected)) {
+                    return esc_url_raw((string) ($asset['browser_download_url'] ?? ''));
+                }
             }
-            return esc_url_raw((string) ($asset['browser_download_url'] ?? ''));
+        }
+        foreach ($assets as $asset) {
+            if (preg_match('/\.zip$/i', (string) ($asset['name'] ?? ''))) {
+                return esc_url_raw((string) ($asset['browser_download_url'] ?? ''));
+            }
         }
         return self::sourceArchiveUrl($release);
     }

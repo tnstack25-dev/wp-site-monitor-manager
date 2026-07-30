@@ -1,0 +1,49 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build WordPress plugin ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          SLUG="wp-site-monitor-manager"
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP="${SLUG}-${VERSION}.zip"
+          STAGE="$(mktemp -d)"
+          mkdir -p "${STAGE}/${SLUG}"
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".github" \
+            ! -name "release-packages" \
+            ! -name "*.zip" \
+            -exec cp -R {} "${STAGE}/${SLUG}/" \;
+          (cd "${STAGE}" && zip -qr "${GITHUB_WORKSPACE}/${ZIP}" "${SLUG}")
+          echo "ZIP=${ZIP}" >> "${GITHUB_ENV}"
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ZIP}" --clobber
+          else
+            gh release create "${TAG}" "${ZIP}" --title "${TAG}" --notes "Release ${TAG}"
+          fi
